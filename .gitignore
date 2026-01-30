@@ -1,0 +1,33 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config files with secrets
+.mobsf_config
+*.env
+!.env.example
+
+# Docker (WIP - remove when finalized)
+Dockerfile
+docker-compose.yml
+.dockerignore
+docker-run.sh
+data/
+.DS_Store

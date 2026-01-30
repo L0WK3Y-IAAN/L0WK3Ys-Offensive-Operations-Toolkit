@@ -1,0 +1,14 @@
+# =============================================================================
+# L0WK3Y's Offensive Operations Toolkit - Root Requirements
+# =============================================================================
+# 
+# Quick Install Options:
+#   pip install -r requirements.txt          # Just the launcher
+#   pip install -e "."                       # Install as package (launcher only)
+#   pip install -e ".[all]"                  # Install everything (all modules)
+#   pip install -e ".[mret]"                 # Install with Mobile-RE-Toolkit deps
+#
+# =============================================================================
+
+# Main Launcher (Textual TUI)
+textual>=0.47.0

@@ -1,0 +1,1 @@
+**Open file explorer in project root directory**

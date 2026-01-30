@@ -1,0 +1,1 @@
+**Opens APK's within the project directories (src an src/pulled_apks) in JADX**

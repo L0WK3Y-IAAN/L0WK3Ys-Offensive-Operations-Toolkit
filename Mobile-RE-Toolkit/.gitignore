@@ -1,0 +1,21 @@
+# Ignore everything
+*
+
+# Except these files and folders
+!.gitignore
+!main.py
+!setup.py
+
+# Include scripts directory and all its contents
+!scripts/
+!scripts/**
+
+# Auto-added WIP script directories
+WIP/
+
+# External tools (cloned repos)
+scripts/Tools/
+
+# Python cache
+__pycache__/
+*.pyc
