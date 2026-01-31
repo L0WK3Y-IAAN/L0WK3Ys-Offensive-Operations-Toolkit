@@ -1,0 +1,48 @@
+#!/bin/bash
+# =============================================================================
+# LOOT - L0WK3Y's Offensive Operations Toolkit Launcher
+# Run this script from anywhere to launch LOOT
+# =============================================================================
+
+# Get the real path of this script (follows symlinks)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+LOOT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Check if LOOT directory exists
+if [[ ! -f "$LOOT_DIR/main.py" ]]; then
+    echo -e "${RED}❌ Error: main.py not found in $LOOT_DIR${NC}"
+    echo -e "${CYAN}Please run this script from the LOOT directory or update LOOT_DIR${NC}"
+    exit 1
+fi
+
+# Change to LOOT directory
+cd "$LOOT_DIR" || exit 1
+
+# Check for virtual environment and activate if exists
+if [[ -d "$LOOT_DIR/.venv" ]]; then
+    source "$LOOT_DIR/.venv/bin/activate"
+elif [[ -d "$LOOT_DIR/venv" ]]; then
+    source "$LOOT_DIR/venv/bin/activate"
+fi
+
+# Check if required packages are installed
+python3 -c "import textual" 2>/dev/null
+if [[ $? -ne 0 ]]; then
+    echo -e "${CYAN}📦 Installing required dependencies...${NC}"
+    pip install -e ".[all]" --quiet
+fi
+
+# Run LOOT
+echo -e "${GREEN}🚀 Launching LOOT...${NC}"
+python3 main.py "$@"
