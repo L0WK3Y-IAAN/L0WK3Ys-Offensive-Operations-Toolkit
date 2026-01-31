@@ -200,29 +200,7 @@ Some tools require additional software:
 
 ## Screenshots
 
-<details>
-<summary>LOOT Launcher</summary>
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  ██╗      ██████╗  ██████╗ ████████╗                            │
-│  ██║     ██╔═══██╗██╔═══██╗╚══██╔══╝                            │
-│  ██║     ██║   ██║██║   ██║   ██║                               │
-│  ██║     ██║   ██║██║   ██║   ██║                               │
-│  ███████╗╚██████╔╝╚██████╔╝   ██║                               │
-│  ╚══════╝ ╚═════╝  ╚═════╝    ╚═╝                               │
-├─────────────┬───────────────────────────────────────────────────┤
-│ Categories  │  Available Toolkits                               │
-│             │                                                   │
-│ [All]       │  ▶ Mobile-RE-Toolkit                              │
-│ [Mobile]    │    Mobile Reverse Engineering Toolkit             │
-│ [Web]       │                                                   │
-│ [Network]   │  ▶ Web-Scanner (coming soon)                      │
-│ [AI]        │                                                   │
-└─────────────┴───────────────────────────────────────────────────┘
-```
-
-</details>
+<img src="https://i.imgur.com/PDhmEaQ.png" width="400">
 
 ## Contributing
 
