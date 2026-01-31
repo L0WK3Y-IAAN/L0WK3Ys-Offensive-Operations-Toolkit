@@ -1,19 +1,18 @@
-# Geiger - Python Edition
+# Geiger - Android APK Security Scanner
 
-🔍 **Production-grade Python wrapper for Android APK static analysis**
+🔍 **Comprehensive static analysis for Android APKs using Nuclei templates and reAVS taint analysis**
 
-Geiger is a modern Python CLI tool that wraps `apktool` and `nuclei` to perform comprehensive static analysis on Android APK files. It automatically manages the mobile-nuclei-templates repository and provides beautiful, structured output.
+Geiger is a Python-based security scanner that combines multiple analysis engines to identify vulnerabilities in Android applications. It provides beautiful, structured output with severity-based findings.
 
 ## Features
 
-✨ **Key Improvements over the original bash script:**
-
-- 🚀 **Auto-Dependency Management**: Automatically clones/updates `optiv/mobile-nuclei-templates`
-- 🔄 **Hybrid Decompilation**: Uses both `apktool` (for nuclei) and `jadx` (for readable Java source)
-- 📊 **Smart Reporting**: Parses nuclei JSON output and displays beautiful tables with `rich`
-- ⚡ **Parallel Processing**: Batch scan multiple APKs simultaneously
-- 🎨 **Rich CLI**: Beautiful colored output, progress bars, and formatted tables
-- 📁 **Multiple Formats**: JSON, HTML, and console output
+- 🚀 **Nuclei Integration**: Uses [optiv/mobile-nuclei-templates](https://github.com/optiv/mobile-nuclei-templates) for pattern-based detection
+- 🔬 **reAVS Taint Analysis**: Optional deep taint analysis using [reAVS](https://github.com/aimardcr/reAVS) (auto-cloned if not installed)
+- 🔄 **Hybrid Decompilation**: Uses both `apktool` (for smali) and `jadx` (for Java source)
+- 📊 **Smart Reporting**: JSON and HTML reports with severity indicators
+- ⚡ **Caching**: Reuses previous decompilation to speed up repeat scans
+- 🎨 **Rich CLI**: Beautiful colored output with progress indicators
+- 🎯 **Interactive APK Selection**: Fuzzy search for APK files
 
 ## Installation
 
@@ -23,119 +22,118 @@ Geiger is a modern Python CLI tool that wraps `apktool` and `nuclei` to perform 
 - `apktool` - [Installation Guide](https://ibotpeaches.github.io/Apktool/install/)
 - `nuclei` - [Installation Guide](https://docs.projectdiscovery.io/nuclei/getting-started/installation)
 - `jadx` (optional) - For Java source decompilation
+- `git` - For cloning templates and reAVS
 
-### Install Geiger
+### Install Dependencies
 
 ```bash
-# Clone or navigate to the Geiger directory
-cd "scripts/Android/Geiger"
+# Navigate to Geiger directory
+cd "Mobile-RE-Toolkit/scripts/Android/Geiger"
 
 # Install Python dependencies
 pip install -r requirements.txt
-
-# Make main.py executable (optional)
-chmod +x geiger/main.py
 ```
 
 ## Usage
 
-### Basic Usage
+### From MRET Launcher
 
-You can run Geiger in two ways:
+Select "Geiger" from the MRET menu and provide arguments:
+- `scan` - Scan an APK for vulnerabilities
+- `templates --update` - Update nuclei templates
 
-**Option 1: Using the launcher script (recommended)**
+### Command Line
+
 ```bash
-# Scan a single APK
-python geiger.py scan app.apk
+# Scan an APK (interactive file selection)
+python geiger.py scan
 
-# Scan a directory of APKs
-python geiger.py scan ./apks/ --threads 8
+# Scan a specific APK
+python geiger.py scan path/to/app.apk
 
-# Keep decompiled source files
-python geiger.py scan app.apk --keep-source
+# Scan with reAVS taint analysis (auto-installs if needed)
+python geiger.py scan --reavs
+
+# Update nuclei templates
+python geiger.py templates --update
 
 # Custom output directory
-python geiger.py scan app.apk -o ./reports/
-```
+python geiger.py scan -o ./my_reports/
 
-**Option 2: Using Python module**
-```bash
-# From the Geiger directory
-python -m geiger.main scan app.apk
+# Keep decompiled source files
+python geiger.py scan --keep-source
 ```
 
 ### Command Options
 
 ```
-Usage: geiger scan [OPTIONS] TARGET
+Usage: geiger scan [OPTIONS] [TARGET]
 
 Arguments:
-  TARGET                  APK file or directory containing APKs
+  TARGET                  APK file (optional - interactive selection if not provided)
 
 Options:
-  -o, --output PATH       Output directory for reports [default: ./geiger_reports]
+  -o, --output PATH       Output directory for reports [default: reports/geiger_reports]
   --keep-source           Keep decompiled source files after scanning
-  --use-jadx / --no-jadx  Also decompile with jadx for Java source [default: True]
-  -t, --threads INTEGER    Number of parallel threads for batch scanning [default: 4]
-  --update-templates      Update nuclei templates before scanning [default: True]
-  -f, --format TEXT       Report format: json, html, all, or none [default: all]
-  -v, --verbose           Verbose output
+  --reavs / --no-reavs    Also run reAVS taint analysis [default: False]
+  -t, --threads INTEGER   Number of parallel threads [default: 4]
+  -f, --format TEXT       Report format: json, html, all [default: all]
   --help                  Show this message and exit
 ```
 
-### Template Management
+## Analysis Engines
 
-```bash
-# Update templates manually
-python geiger.py templates --update
+### Nuclei (Default)
+Uses mobile-specific templates from [optiv/mobile-nuclei-templates](https://github.com/optiv/mobile-nuclei-templates) to detect:
+- Hardcoded secrets and API keys
+- Insecure configurations
+- Vulnerable code patterns
+- Privacy issues
 
-# Check templates without updating
-python geiger.py templates --no-update
+### reAVS (Optional)
+When enabled with `--reavs`, performs deep taint analysis using [reAVS](https://github.com/aimardcr/reAVS):
+- Source-to-sink data flow analysis
+- Entry point vulnerability detection
+- Component security analysis
+- High-confidence vulnerability identification
+
+**Note**: reAVS is automatically cloned and set up when first used.
+
+## Output
+
+### Reports Location
+
+Reports are saved to:
+```
+Mobile-RE-Toolkit/reports/geiger_reports/<apk_name>/
+├── <apk_name>_report.json    # Structured JSON data
+└── <apk_name>_report.html    # Formatted HTML report
+```
+
+### Cached Extractions
+
+Decompiled APKs are cached for faster repeat scans:
+```
+Mobile-RE-Toolkit/src/output/geiger/<apk_name>_EXTRACTION/
+├── apktool/    # Smali/resources from apktool
+└── jadx/       # Java source from jadx
 ```
 
 ## How It Works
 
-1. **Template Management**: Automatically clones/updates `optiv/mobile-nuclei-templates` to `~/.geiger/mobile-nuclei-templates`
+1. **Template Management**: Clones/updates `optiv/mobile-nuclei-templates` to `~/.geiger/mobile-nuclei-templates`
 
 2. **Decompilation**:
-   - Uses `apktool` to decompile APK (required for nuclei smali templates)
-   - Optionally uses `jadx` to generate readable Java source code
+   - Uses `apktool` for smali and resource extraction
+   - Uses `jadx` for readable Java source code
 
-3. **Scanning**: Runs `nuclei` against the decompiled directory with mobile security templates
+3. **Scanning**:
+   - Runs `nuclei` against decompiled directory
+   - Optionally runs `reAVS` for taint analysis
 
-4. **Reporting**: Parses JSON output and generates:
-   - Console table with colored severity indicators
-   - JSON report file
-   - HTML report file
-
-## Output
-
-### Console Output
-
-The tool displays a formatted table showing:
-- **Severity**: Critical, High, Medium, Low, Info
-- **Name**: Vulnerability name
-- **File**: File path where vulnerability was found
-- **Match**: Matched text/pattern
-
-### Report Files
-
-Reports are saved in the output directory:
-- `{apk_name}_report.json` - Structured JSON data
-- `{apk_name}_report.html` - Formatted HTML report
-
-## Examples
-
-### Single APK Scan
-
-```bash
-$ python -m geiger.main scan suspicious_app.apk
-
-✓ Using 45 nuclei templates
-[bold cyan]Scanning: suspicious_app.apk[/bold cyan]
-
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ geiger scan app.apk
-```
+4. **Reporting**:
+   - Parses and merges findings from both engines
+   - Generates JSON and HTML reports with severity indicators
 
 ## Exit Codes
 
@@ -143,26 +141,11 @@ $ python -m geiger.main scan suspicious_app.apk
 - `1` - Error occurred during scanning
 - `2` - Success, but findings were detected
 
-## Project Structure
-
-```
-geiger/
-├── __init__.py
-├── main.py            # Entry point (Typer app)
-├── config.py          # Paths and constants
-├── core/
-│   ├── decompiler.py  # Wrapper for Apktool & Jadx
-│   ├── scanner.py     # Wrapper for Nuclei execution
-│   └── templates.py   # Git clone/update logic
-└── utils/
-    ├── cleanup.py     # Context manager for temp files
-    └── output.py      # Rich printing logic
-```
-
 ## Credits
 
-- Original bash script: [utkarsh24122/apknuke](https://github.com/utkarsh24122/apknuke)
-- Nuclei templates: [optiv/mobile-nuclei-templates](https://github.com/optiv/mobile-nuclei-templates)
+- **Original bash script**: [utkarsh24122/apknuke](https://github.com/utkarsh24122/apknuke)
+- **Nuclei templates**: [optiv/mobile-nuclei-templates](https://github.com/optiv/mobile-nuclei-templates)
+- **reAVS taint analysis**: [aimardcr/reAVS](https://github.com/aimardcr/reAVS) by [Aimar Sechan Adhitya](https://github.com/aimardcr)
 
 ## License
 

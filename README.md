@@ -259,3 +259,5 @@ This toolkit integrates with or uses the following open source projects:
 - [Semgrep](https://semgrep.dev/) - Static analysis (LGPL)
 - [Nuclei](https://github.com/projectdiscovery/nuclei) - Vulnerability scanner (MIT)
 - [Textual](https://github.com/Textualize/textual) - TUI framework (MIT)
+- [reAVS](https://github.com/aimardcr/reAVS) - Android static analyzer with taint analysis by [@aimardcr](https://github.com/aimardcr)
+- [MobSF](https://github.com/MobSF/Mobile-Security-Framework-MobSF) - Mobile Security Framework
