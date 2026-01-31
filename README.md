@@ -198,10 +198,7 @@ Some tools require additional software:
 | Drozer | [drozer](https://github.com/WithSecureLabs/drozer) |
 | MobSF | [docker](https://github.com/MobSF/Mobile-Security-Framework-MobSF) |
 
-## Screenshots
-
-### Main Menu
-<img src="https://i.imgur.com/PDhmEaQ.png" width="1000">
+## Demos
 
 ### Geiger Demo
 <img src=".assets/geiger-demo.gif" width="1000">
