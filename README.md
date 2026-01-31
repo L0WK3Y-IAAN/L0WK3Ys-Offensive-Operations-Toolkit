@@ -2,7 +2,7 @@
 
 # L0WK3Y's Offensive Operations Toolkit (LOOT)
 
-<img src=".assets/loot-logo.png" alt="LOOT Logo" width="400">
+<img src=".assets/loot-glitch.gif" alt="LOOT Logo" width="400">
 
 [![Python](https://img.shields.io/badge/Python-3.10+-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
