@@ -78,7 +78,7 @@ def scan_single_apk(
         # Persistent extraction cache goes here:
         extraction_base = DEFAULT_EXTRACTION_DIR / f"{apk_name}_EXTRACTION"
         
-        apktool_dir, jadx_dir, decomp_error = decompiler.decompile(
+        apktool_dir, _, decomp_error = decompiler.decompile(
             apk_path,
             extraction_base,
             use_jadx=use_jadx,
@@ -93,8 +93,7 @@ def scan_single_apk(
         
         # Scan with reAVS if available (taint analysis)
         if reavs_scanner and reavs_scanner.is_available():
-            console.print("[cyan]Running reAVS taint analysis...[/cyan]")
-            reavs_findings = reavs_scanner.scan(apk_path, deep=True, depth=3)
+            reavs_findings = reavs_scanner.scan(apk_path, deep=True, depth=3, verbose=True)
             
             if reavs_findings:
                 # Convert reAVS findings to nuclei format and merge

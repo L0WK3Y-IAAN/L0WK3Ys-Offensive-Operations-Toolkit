@@ -4,12 +4,65 @@ import json
 import subprocess
 import sys
 import platform
+import threading
 from pathlib import Path
 from typing import List, Dict, Optional
 
 from rich.console import Console
 
 console = Console()
+
+
+def _stream_output(pipe, is_stderr: bool = False, verbose: bool = True):
+    """Read and display output from subprocess pipe in real-time."""
+    try:
+        for line in iter(pipe.readline, ''):
+            if not line:
+                break
+            line = line.rstrip()
+            if line and verbose:
+                if is_stderr:
+                    console.print(f"[red]{line}[/red]")
+                else:
+                    # Color-code reAVS output for better readability
+                    if line.startswith("[*]"):
+                        # Parse and colorize scanner info
+                        if "scanner start" in line:
+                            console.print(f"[cyan]{line}[/cyan]")
+                        elif "scanner end" in line:
+                            if "findings=0" in line:
+                                console.print(f"[dim]{line}[/dim]")
+                            else:
+                                console.print(f"[yellow]{line}[/yellow]")
+                        elif "findings CRITICAL" in line or "HIGH" in line:
+                            console.print(f"[bold red]{line}[/bold red]")
+                        elif "loading apk" in line or "scan mode" in line:
+                            console.print(f"[blue]{line}[/blue]")
+                        elif "components" in line or "methods analyzed" in line:
+                            console.print(f"[green]{line}[/green]")
+                        else:
+                            console.print(f"[dim]{line}[/dim]")
+                    elif line.startswith("[+]"):
+                        console.print(f"[green]{line}[/green]")
+                    elif line.startswith("[-]") or line.startswith("[!]"):
+                        console.print(f"[yellow]{line}[/yellow]")
+                    elif line.startswith("SEVERITY"):
+                        # Table header
+                        console.print(f"\n[bold]{line}[/bold]")
+                    elif line.startswith("─") or line.startswith("-"):
+                        console.print(f"[dim]{line}[/dim]")
+                    elif "CRITICAL" in line or "HIGH" in line:
+                        console.print(f"[red]{line}[/red]")
+                    elif "MEDIUM" in line:
+                        console.print(f"[yellow]{line}[/yellow]")
+                    elif "LOW" in line or "INFO" in line:
+                        console.print(f"[dim]{line}[/dim]")
+                    else:
+                        console.print(f"[dim]{line}[/dim]")
+    except Exception:
+        pass
+    finally:
+        pipe.close()
 
 REAVS_REPO_URL = "https://github.com/aimardcr/reAVS.git"
 
@@ -201,16 +254,18 @@ class ReavsScanner:
         apk_path: Path,
         output_file: Optional[Path] = None,
         deep: bool = True,
-        depth: int = 3
+        depth: int = 3,
+        verbose: bool = True
     ) -> List[Dict]:
         """
-        Run reAVS scan on APK file.
+        Run reAVS scan on APK file with optional live output streaming.
         
         Args:
             apk_path: Path to APK file
             output_file: Optional output file for JSON results
             deep: Use deep scan mode (taint analysis)
             depth: Helper propagation depth for deep mode
+            verbose: Stream reAVS output in real-time
         
         Returns:
             List of parsed findings (dictionaries)
@@ -250,29 +305,71 @@ class ReavsScanner:
             else:
                 cmd.append("--fast")
             
-            # Run reAVS (must run from reAVS directory so it can find rules/)
-            result = subprocess.run(
-                cmd,
-                cwd=str(self.reavs_dir),  # Run from reAVS directory
-                capture_output=True,
-                text=True,
-                timeout=1800  # 30 minute timeout
-            )
-            
-            # Check for errors first
-            if result.returncode != 0:
-                error_msg = result.stderr or result.stdout
-                if error_msg:
-                    # Show more context for common errors
-                    if "ModuleNotFoundError" in error_msg or "No module named" in error_msg:
-                        console.print("[red]✗ reAVS dependencies not installed[/red]")
-                        console.print("[yellow]💡 Tip: Run the reAVS scan script first to set up dependencies:[/yellow]")
-                        console.print(f"[dim]   python scripts/Android/reAVS\\ Scan/reavs_scan.py[/dim]")
-                    else:
-                        # Show first 500 chars of error
-                        console.print(f"[red]✗ reAVS scan failed:[/red]")
-                        console.print(f"[dim]{error_msg[:500]}[/dim]")
-                return []
+            if verbose:
+                # Display scan info
+                console.print(f"\n[cyan]Running reAVS scan on {apk_path.name}...[/cyan]")
+                console.print(f"[dim]Mode: {'deep' if deep else 'fast'} | Depth: {depth}[/dim]")
+                console.print(f"[dim]Output: {output_file}[/dim]\n")
+                
+                # Run with live output streaming using Popen
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(self.reavs_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
+                # Start threads to stream stdout and stderr
+                stdout_thread = threading.Thread(
+                    target=_stream_output, 
+                    args=(proc.stdout, False, verbose)
+                )
+                stderr_thread = threading.Thread(
+                    target=_stream_output, 
+                    args=(proc.stderr, True, verbose)
+                )
+                
+                stdout_thread.daemon = True
+                stderr_thread.daemon = True
+                
+                stdout_thread.start()
+                stderr_thread.start()
+                
+                # Wait for process to complete
+                return_code = proc.wait()
+                
+                # Wait for threads to finish reading
+                stdout_thread.join(timeout=2)
+                stderr_thread.join(timeout=2)
+                
+                if return_code != 0:
+                    console.print(f"\n[red]✗ reAVS scan failed with return code {return_code}[/red]")
+                    return []
+            else:
+                # Run silently with capture_output
+                result = subprocess.run(
+                    cmd,
+                    cwd=str(self.reavs_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=1800  # 30 minute timeout
+                )
+                
+                # Check for errors
+                if result.returncode != 0:
+                    error_msg = result.stderr or result.stdout
+                    if error_msg:
+                        if "ModuleNotFoundError" in error_msg or "No module named" in error_msg:
+                            console.print("[red]✗ reAVS dependencies not installed[/red]")
+                            console.print("[yellow]💡 Tip: Run the reAVS scan script first to set up dependencies:[/yellow]")
+                            console.print(f"[dim]   python scripts/Android/reAVS\\ Scan/reavs_scan.py[/dim]")
+                        else:
+                            console.print(f"[red]✗ reAVS scan failed:[/red]")
+                            console.print(f"[dim]{error_msg[:500]}[/dim]")
+                    return []
             
             # Parse results
             findings = []
@@ -287,7 +384,6 @@ class ReavsScanner:
                         findings = data.get("findings", [])
                 except json.JSONDecodeError as e:
                     console.print(f"[yellow]⚠ Error parsing reAVS output: {e}[/yellow]")
-                    # Try to show what we got
                     if output_file.exists():
                         with open(output_file, 'r', encoding='utf-8') as f:
                             content = f.read()[:200]
