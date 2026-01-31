@@ -203,6 +203,9 @@ Some tools require additional software:
 ### Geiger Demo
 <img src=".assets/geiger-demo.gif" width="1000">
 
+### Semgrep Scan Demo
+<img src=".assets/semgrep-demo.gif" width="1000">
+
 
 
 ## Contributing
