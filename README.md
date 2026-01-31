@@ -62,7 +62,7 @@ A comprehensive suite for Android and iOS security analysis with a modern TUI in
 | **APK Puller** | Pull APKs directly from connected Android devices |
 | **APK Extraction** | Extract and decompile APKs to Java/Smali/DEX |
 | **Semgrep Scan** | Static security analysis with Android-specific rules |
-| **Geiger** | Vulnerability scanner using Nuclei + reAVS templates |
+| **Geiger** | Vulnerability scanner using Nuclei templates + reAVS taint analysis |
 | **Frida Script Downloader** | Download and manage Frida scripts from the community |
 | **Frida Ex** | Execute Frida scripts against target applications |
 | **Auto Frida Patcher** | Automatically patch APKs with Frida gadget |
