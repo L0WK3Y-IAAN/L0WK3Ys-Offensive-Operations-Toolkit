@@ -46,7 +46,7 @@ LOOT is a modular toolkit designed for security researchers and penetration test
 - **Modular Architecture** - Each toolkit operates independently with its own dependencies
 - **Extensible Design** - Easily add new toolkits by dropping in a folder with a `main.py`
 
-## Included Toolkits
+## Included Toolkits (and some WIP)
 
 ### Mobile Reverse Engineering Toolkit (MRET)
 
