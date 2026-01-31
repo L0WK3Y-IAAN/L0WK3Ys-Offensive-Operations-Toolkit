@@ -200,7 +200,13 @@ Some tools require additional software:
 
 ## Screenshots
 
+### Main Menu
 <img src="https://i.imgur.com/PDhmEaQ.png" width="1000">
+
+### Geiger Demo
+<img src=".assets/geiger-demo.gif" width="1000">
+
+
 
 ## Contributing
 
