@@ -7,6 +7,7 @@ import threading
 import queue
 import platform
 import time
+from pathlib import Path
 from typing import List
 from rich.console import Console
 from rich.table import Table
@@ -16,11 +17,43 @@ from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.validation import Validator, ValidationError
 
 console = Console()
-APK_DIRECTORIES = ["root", "src", "src/output/pulled_apks"]
+
+
+def get_toolkit_root() -> Path:
+    """Resolve Mobile-RE-Toolkit root (contains main.py and src/)."""
+    env_root = os.environ.get("MOBILE_RE_TOOLKIT_ROOT")
+    if env_root:
+        root = Path(env_root).resolve()
+        if root.exists() and (root / "main.py").exists() and (root / "src").exists():
+            return root
+    script_dir = Path(__file__).resolve().parent
+    current = script_dir
+    for _ in range(10):
+        if (current / "main.py").exists() and (current / "src").exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    cwd = Path.cwd()
+    if (cwd / "main.py").exists() and (cwd / "src").exists():
+        return cwd
+    return script_dir  # fallback: script's parent chain didn't find it, use cwd-equivalent
+
+
+def get_apk_directories() -> List[str]:
+    """Return absolute paths to directories to scan for APKs."""
+    root = get_toolkit_root()
+    return [
+        str(root),                           # toolkit root
+        str(root / "src"),                   # src
+        str(root / "src" / "output" / "pulled_apks"),
+    ]
 
 # --- Background workers -----------------------------------------------------
 
 def scan_apks_worker(dirs: List[str], out_q: queue.Queue):
+    seen = set()
     apks = []
     for d in dirs:
         if not os.path.exists(d):
@@ -28,7 +61,11 @@ def scan_apks_worker(dirs: List[str], out_q: queue.Queue):
         for root, _, files in os.walk(d):
             for f in files:
                 if f.endswith('.apk'):
-                    apks.append(os.path.join(root, f))
+                    path = os.path.join(root, f)
+                    canonical = os.path.realpath(path)
+                    if canonical not in seen:
+                        seen.add(canonical)
+                        apks.append(path)
     apks.sort(key=lambda p: os.path.basename(p).lower())
     out_q.put(apks)
 
@@ -161,17 +198,18 @@ def main():
         sys.exit(1)
 
     console.print('[green]✅ jadx-gui found and available[/green]')
-    console.print('[cyan]🔍 Scanning for APKs...[/cyan]')
+    apk_dirs = get_apk_directories()
+    console.print(f'[cyan]🔍 Scanning for APKs in: {apk_dirs}[/cyan]')
 
     # Scan for APKs in background
     q = queue.Queue()
-    t = threading.Thread(target=scan_apks_worker, args=(APK_DIRECTORIES, q), daemon=True)
+    t = threading.Thread(target=scan_apks_worker, args=(apk_dirs, q), daemon=True)
     t.start()
     apks: List[str] = q.get()  # wait for scan to finish
 
     if not apks:
         console.print('[red]❌ No APKs found in the following directories:[/red]')
-        for directory in APK_DIRECTORIES:
+        for directory in apk_dirs:
             exists = "✅" if os.path.exists(directory) else "❌"
             console.print(f'  {exists} {directory}')
         sys.exit(1)
