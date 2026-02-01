@@ -157,7 +157,7 @@ def get_script_platforms(script_path: Path, default_platform: str) -> List[str]:
             return valid if valid else [default_platform]
         
         return [default_platform]
-            except Exception:
+    except Exception:
         return [default_platform]
 
 
@@ -298,15 +298,15 @@ def discover_scripts(platform: str = "All", deduplicate: bool = True) -> List[Sc
                             supported_platforms=supported_platforms
                         ))
         return results
-    
-        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
+
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
         futures = {executor.submit(scan_platform, p): p for p in platforms_to_scan}
-            for future in as_completed(futures):
-                try:
+        for future in as_completed(futures):
+            try:
                 scripts.extend(future.result())
-                except Exception:
-                    pass
-        
+            except Exception:
+                pass
+
     # Deduplicate cross-platform scripts when showing "All"
     if platform == "All" and deduplicate:
         seen_names: Dict[str, ScriptInfo] = {}
@@ -314,7 +314,7 @@ def discover_scripts(platform: str = "All", deduplicate: bool = True) -> List[Sc
             name_lower = script.name.lower()
             if name_lower not in seen_names:
                 seen_names[name_lower] = script
-    else:
+            else:
                 # Prefer the script with more platform support, or keep existing
                 existing = seen_names[name_lower]
                 # Merge supported platforms
@@ -325,9 +325,9 @@ def discover_scripts(platform: str = "All", deduplicate: bool = True) -> List[Sc
                     script.supported_platforms = all_platforms
                     seen_names[name_lower] = script
         scripts = list(seen_names.values())
-    
+
     scripts.sort(key=lambda s: (s.platform, s.name.lower()))
-        return scripts
+    return scripts
 
 
 def scan_wip_and_update_gitignore() -> int:
@@ -807,13 +807,13 @@ class MRETApp(App):
         table.add_column("Description")
         table.add_column("Requires Args", width=14)
         table.cursor_type = "row"
-        
+
         # Initialize
-    organize_scripts()
+        organize_scripts()
         wip_count = scan_wip_and_update_gitignore()
         if wip_count > 0:
             self.notify(f"Added {wip_count} WIP directories to .gitignore", title="WIP Scan")
-        
+
         # Load scripts
         self.load_scripts()
     
@@ -980,7 +980,7 @@ class MRETApp(App):
         
         if not path_str:
             file_import.hide()
-                return
+            return
             
         # Clean path (remove quotes that might be added by drag-drop)
         path_str = path_str.strip().strip('"').strip("'")
@@ -1031,7 +1031,7 @@ class MRETApp(App):
                 
         except PermissionError:
             self.notify("Permission denied", title="Import Error", severity="error")
-            except Exception as e:
+        except Exception as e:
             self.notify(f"Import failed: {e}", title="Import Error", severity="error")
     
     def _get_import_destination(self, source_path: Path) -> Path:
@@ -1153,7 +1153,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-    main()
+        main()
     except KeyboardInterrupt:
         import sys
         print("\n👋 Cancelled by user")

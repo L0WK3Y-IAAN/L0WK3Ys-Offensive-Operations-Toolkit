@@ -57,6 +57,90 @@ def reset_terminal():
         pass
 
 
+def check_for_updates(repo_root: Path) -> tuple[bool, str]:
+    """
+    Check if the repo has updates on GitHub (current branch vs origin).
+    Returns (update_available, message).
+    """
+    git_dir = repo_root / ".git"
+    if not git_dir.exists():
+        return False, "Not a git repository (no .git)"
+    try:
+        # Get current branch
+        r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if r.returncode != 0:
+            return False, "Could not determine current branch"
+        branch = r.stdout.strip() or "main"
+        remote_ref = f"origin/{branch}"
+        # Fetch from origin (quiet)
+        subprocess.run(
+            ["git", "fetch", "origin", "--quiet"],
+            cwd=repo_root,
+            capture_output=True,
+            timeout=30,
+        )
+        # Count commits we're behind origin
+        r2 = subprocess.run(
+            ["git", "rev-list", "--count", f"HEAD..{remote_ref}"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if r2.returncode != 0:
+            return False, f"Could not compare with {remote_ref}"
+        behind = int(r2.stdout.strip() or "0")
+        if behind > 0:
+            return True, f"{behind} new commit(s) on origin/{branch}. Press U to update."
+        return False, "Already up to date."
+    except subprocess.TimeoutExpired:
+        return False, "Update check timed out."
+    except FileNotFoundError:
+        return False, "Git not installed."
+    except Exception as e:
+        return False, str(e)
+
+
+def pull_updates(repo_root: Path) -> tuple[bool, str]:
+    """Pull latest changes from origin. Returns (success, message)."""
+    git_dir = repo_root / ".git"
+    if not git_dir.exists():
+        return False, "Not a git repository"
+    try:
+        r_branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        branch = (r_branch.stdout or "").strip() or "main"
+        r = subprocess.run(
+            ["git", "pull", "origin", branch, "--no-edit"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if r.returncode == 0:
+            out = (r.stdout or "").strip()
+            return True, out or "Pulled successfully. Restart LOOT to use the new version."
+        err = (r.stderr or r.stdout or "").strip()
+        return False, err or "Pull failed."
+    except subprocess.TimeoutExpired:
+        return False, "Pull timed out."
+    except FileNotFoundError:
+        return False, "Git not installed."
+    except Exception as e:
+        return False, str(e)
+
+
 def detect_category(folder_name: str, main_py_path: Path) -> str:
     """Detect the category of a toolkit based on markers or folder name."""
     # First, check for explicit marker in main.py
@@ -429,6 +513,7 @@ class ToolkitLauncher(App):
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
+        Binding("u", "update", "Update"),
         Binding("escape", "quit", "Quit"),
         Binding("1", "select_category_1", "All", show=False),
         Binding("2", "select_category_2", "Mobile", show=False),
@@ -445,6 +530,12 @@ class ToolkitLauncher(App):
         self.selected_toolkit: Path | None = None
         self.current_category = "All"
     
+    def on_mount(self) -> None:
+        """Run update check on launch; notify if updates available."""
+        has_update, msg = check_for_updates(self.repo_root)
+        if has_update:
+            self.notify(msg, title="Update available", severity="information", timeout=8)
+
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         yield Header()
@@ -472,7 +563,7 @@ class ToolkitLauncher(App):
                     else:
                         yield Label("No toolkit modules found!")
         
-        yield Static(f"📁 Repo: {self.repo_root} | Press 1-5 for categories", id="status-bar")
+        yield Static(f"📁 Repo: {self.repo_root} | 1-5 categories | U update", id="status-bar")
         yield Footer()
     
     def _scan_for_toolkits(self) -> list[ToolkitInfo]:
@@ -542,7 +633,24 @@ class ToolkitLauncher(App):
         self.all_toolkits = self._scan_for_toolkits()
         self._filter_toolkits(self.current_category)
         self.notify("Toolkit list refreshed!", title="Refresh")
-    
+
+    def action_update(self) -> None:
+        """Check for updates from GitHub and pull if available."""
+        has_update, msg = check_for_updates(self.repo_root)
+        if not has_update:
+            self.notify(msg, title="Update")
+            return
+        self.notify(msg, title="Update available", severity="information")
+        ok, pull_msg = pull_updates(self.repo_root)
+        if ok:
+            self.notify(
+                pull_msg + " Restart LOOT to use the new version.",
+                title="Update complete",
+                severity="information",
+            )
+        else:
+            self.notify(pull_msg, title="Update failed", severity="error")
+
     def action_quit(self) -> None:
         """Quit the application."""
         self.exit(None)
