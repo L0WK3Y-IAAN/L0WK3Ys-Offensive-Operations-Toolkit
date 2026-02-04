@@ -68,6 +68,7 @@ A comprehensive suite for Android and iOS security analysis with a modern TUI in
 | **Auto Frida Patcher** | Automatically patch APKs with Frida gadget |
 | **Strings of Interest** | Extract sensitive strings (API keys, URLs, secrets) |
 | **Open in JADX** | Quick launcher for JADX GUI |
+| **Hermes Dec** | Decompile React Native Hermes bytecode bundles |
 | **Android Backup Extractor** | Extract and analyze Android backup files |
 | **APK Builder + Installer** | Rebuild and sign modified APKs |
 | **Launch Drozer** | Start Drozer for dynamic Android analysis |
@@ -195,6 +196,7 @@ Some tools require additional software:
 | Frida | `pip install frida-tools` |
 | Semgrep | `pip install semgrep` |
 | Nuclei | `brew install nuclei` or [download](https://github.com/projectdiscovery/nuclei) |
+| hermes-dec | Auto-cloned by Hermes Dec tool (requires Git) |
 | Drozer | [drozer](https://github.com/WithSecureLabs/drozer) |
 | MobSF | [docker](https://github.com/MobSF/Mobile-Security-Framework-MobSF) |
 
@@ -245,3 +247,4 @@ This toolkit integrates with or uses the following open source projects:
 - [Textual](https://github.com/Textualize/textual) - TUI framework (MIT)
 - [reAVS](https://github.com/aimardcr/reAVS) - Android static analyzer with taint analysis by [@aimardcr](https://github.com/aimardcr)
 - [MobSF](https://github.com/MobSF/Mobile-Security-Framework-MobSF) - Mobile Security Framework
+- [hermes-dec](https://github.com/P1sec/hermes-dec) - React Native Hermes bytecode decompiler by [@P1sec](https://github.com/P1sec) (AGPL-3.0)
