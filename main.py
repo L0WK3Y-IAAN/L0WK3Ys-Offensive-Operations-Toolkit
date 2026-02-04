@@ -7,10 +7,16 @@ A TUI-based launcher for all toolkit modules.
 import os
 import sys
 import subprocess
-import tty
-import termios
 from pathlib import Path
 from dataclasses import dataclass
+
+# Unix-only imports (for terminal control)
+try:
+    import tty
+    import termios
+    HAS_TERMIOS = True
+except ImportError:
+    HAS_TERMIOS = False
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -51,8 +57,12 @@ class ToolkitInfo:
 def reset_terminal():
     """Reset terminal to sane state."""
     try:
-        os.system('stty sane 2>/dev/null')
-        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+        if HAS_TERMIOS:
+            os.system('stty sane 2>/dev/null')
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+        else:
+            # Windows: Clear terminal buffer if possible
+            os.system('cls 2>nul')
     except Exception:
         pass
 

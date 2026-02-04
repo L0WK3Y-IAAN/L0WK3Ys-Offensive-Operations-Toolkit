@@ -25,6 +25,7 @@ mret_requirements = [
     "selenium>=4.0.0",
     "colorama>=0.4.6",
     "Pygments>=2.15.0",
+    "GitPython>=3.1.0",
 ]
 
 # All dependencies combined
