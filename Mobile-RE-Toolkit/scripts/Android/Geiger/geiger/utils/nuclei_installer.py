@@ -22,12 +22,27 @@ NUCLEI_REPO_URL = "https://github.com/projectdiscovery/nuclei/releases/latest"
 
 def find_nuclei() -> Optional[str]:
     """
-    Check if nuclei is installed and available in PATH.
+    Check if nuclei is installed and available in PATH or geiger bin directory.
     
     Returns:
         Path to nuclei binary or None if not found
     """
-    return shutil.which("nuclei")
+    # First check PATH
+    nuclei_path = shutil.which("nuclei")
+    if nuclei_path:
+        return nuclei_path
+    
+    # Check geiger bin directory (common installation location)
+    geiger_bin = Path.home() / ".geiger" / "bin"
+    if platform.system() == "Windows":
+        geiger_nuclei = geiger_bin / "nuclei.exe"
+    else:
+        geiger_nuclei = geiger_bin / "nuclei"
+    
+    if geiger_nuclei.exists() and geiger_nuclei.is_file():
+        return str(geiger_nuclei)
+    
+    return None
 
 
 def get_platform_info() -> tuple[str, str, str]:
@@ -314,13 +329,43 @@ def ensure_nuclei_installed(install_if_missing: bool = True) -> Optional[str]:
             )
             if result.returncode == 0:
                 version = result.stdout.strip().split()[1] if result.stdout else "unknown"
-                console.print(f"[green]✓ Nuclei found: {nuclei_path} (v{version})[/green]")
+                # Only print if it's not in PATH (to avoid spam on every launch)
+                if str(Path(nuclei_path).parent) not in os.environ.get("PATH", ""):
+                    console.print(f"[green]✓ Nuclei found: {nuclei_path} (v{version})[/green]")
                 return nuclei_path
         except Exception:
+            # If verification fails, continue to installation check
             pass
     
     if not install_if_missing:
         return None
+    
+    # Check if nuclei is already installed in geiger bin but not in PATH
+    geiger_bin = Path.home() / ".geiger" / "bin"
+    if platform.system() == "Windows":
+        geiger_nuclei = geiger_bin / "nuclei.exe"
+    else:
+        geiger_nuclei = geiger_bin / "nuclei"
+    
+    if geiger_nuclei.exists() and geiger_nuclei.is_file():
+        # Already installed, just verify it works
+        try:
+            result = subprocess.run(
+                [str(geiger_nuclei), "-version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                version = result.stdout.strip().split()[1] if result.stdout else "unknown"
+                console.print(f"[green]✓ Nuclei found: {geiger_nuclei} (v{version})[/green]")
+                # Add to PATH for this session if not already there
+                if str(geiger_bin) not in os.environ.get("PATH", ""):
+                    os.environ["PATH"] = f"{geiger_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+                return str(geiger_nuclei)
+        except Exception:
+            # If it doesn't work, try to reinstall
+            pass
     
     # Try to install
     try:

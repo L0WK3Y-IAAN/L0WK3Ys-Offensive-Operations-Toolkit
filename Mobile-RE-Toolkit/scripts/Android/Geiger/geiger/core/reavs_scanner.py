@@ -89,13 +89,22 @@ class ReavsScanner:
         if self.reavs_dir and (self.reavs_dir / "avs.py").exists():
             self.avs_py = self.reavs_dir / "avs.py"
             # Try to find Python executable (prefer venv if exists)
-            # Check multiple possible venv locations
-            venv_locations = [
-                self.reavs_dir / ".venv" / "bin" / "python",
-                self.reavs_dir / "venv" / "bin" / "python",
-                self.reavs_dir / ".venv" / "bin" / "python3",
-                self.reavs_dir / "venv" / "bin" / "python3",
-            ]
+            # Check multiple possible venv locations (Windows and Unix)
+            is_windows = platform.system() == "Windows"
+            if is_windows:
+                venv_locations = [
+                    self.reavs_dir / ".venv" / "Scripts" / "python.exe",
+                    self.reavs_dir / "venv" / "Scripts" / "python.exe",
+                    self.reavs_dir / ".venv" / "Scripts" / "python3.exe",
+                    self.reavs_dir / "venv" / "Scripts" / "python3.exe",
+                ]
+            else:
+                venv_locations = [
+                    self.reavs_dir / ".venv" / "bin" / "python",
+                    self.reavs_dir / "venv" / "bin" / "python",
+                    self.reavs_dir / ".venv" / "bin" / "python3",
+                    self.reavs_dir / "venv" / "bin" / "python3",
+                ]
             
             for venv_python in venv_locations:
                 if venv_python.exists():
@@ -112,16 +121,21 @@ class ReavsScanner:
         # Try common locations
         current = Path(__file__).resolve()
         
-        # Go up from geiger/core/ to workspace root
-        workspace_root = current.parent.parent.parent.parent.parent
+        # Go up from geiger/core/ to scripts directory
+        # Path: Mobile-RE-Toolkit/scripts/Android/Geiger/geiger/core/reavs_scanner.py
+        # Need to go up 5 levels: core -> geiger -> Geiger -> Android -> scripts
+        scripts_dir = current.parent.parent.parent.parent.parent
         
-        # Check Tools/reAVS
-        reavs_dir = workspace_root / "Tools" / "reAVS"
+        # Check scripts/Tools/reAVS (primary location)
+        reavs_dir = scripts_dir / "Tools" / "reAVS"
         if reavs_dir.exists() and (reavs_dir / "avs.py").exists():
             return reavs_dir
         
-        # Try alternative path
-        alt_reavs = workspace_root.parent / "Tools" / "reAVS"
+        # Go up one more level to Mobile-RE-Toolkit root
+        workspace_root = scripts_dir.parent
+        
+        # Check Tools/reAVS (alternative location)
+        alt_reavs = workspace_root / "Tools" / "reAVS"
         if alt_reavs.exists() and (alt_reavs / "avs.py").exists():
             return alt_reavs
         
@@ -129,11 +143,13 @@ class ReavsScanner:
     
     @staticmethod
     def _get_tools_dir() -> Path:
-        """Get the Tools directory path."""
+        """Get the Tools directory path (scripts/Tools)."""
         current = Path(__file__).resolve()
-        # Go up from geiger/core/ to workspace root (Mobile-RE-Toolkit)
-        workspace_root = current.parent.parent.parent.parent.parent
-        return workspace_root / "Tools"
+        # Go up from geiger/core/ to scripts directory
+        # Path: Mobile-RE-Toolkit/scripts/Android/Geiger/geiger/core/reavs_scanner.py
+        # Need to go up 5 levels: core -> geiger -> Geiger -> Android -> scripts
+        scripts_dir = current.parent.parent.parent.parent.parent
+        return scripts_dir / "Tools"
     
     def _auto_setup_reavs(self) -> Optional[Path]:
         """Automatically clone and set up reAVS if not available."""

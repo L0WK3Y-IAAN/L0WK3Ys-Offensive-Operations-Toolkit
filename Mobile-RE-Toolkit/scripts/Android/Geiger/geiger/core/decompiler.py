@@ -66,7 +66,7 @@ class Decompiler:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minute timeout
+                timeout=1800  # 30 minute timeout for large/complex APKs
             )
             
             if progress and task:
@@ -81,7 +81,7 @@ class Decompiler:
         except subprocess.TimeoutExpired:
             if progress and task:
                 progress.update(task, completed=True)
-            return False, "apktool decompilation timed out (exceeded 10 minutes)"
+            return False, "apktool decompilation timed out (exceeded 30 minutes)"
         except Exception as e:
             if progress and task:
                 progress.update(task, completed=True)
