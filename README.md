@@ -34,9 +34,9 @@
 LOOT is a modular toolkit designed for security researchers and penetration testers. It provides a modern Text User Interface (TUI) to access and manage various security tools organized by category across multiple security domains:
 
 - **Mobile Security** - Android & iOS application analysis, reverse engineering, and vulnerability assessment
-- **Web Security** - Web application penetration testing and vulnerability scanning
-- **Network Security** - Network reconnaissance, scanning, and exploitation tools
-- **AI/LLM Security** - Tools for testing and securing AI/ML models and LLM applications
+- **Web Security (TBA)** - Web application penetration testing and vulnerability scanning
+- **Network Security (TBA)** - Network reconnaissance, scanning, and exploitation tools
+- **AI/LLM Security (TBA)** - Tools for testing and securing AI/ML models and LLM applications
 
 ### Key Features
 
