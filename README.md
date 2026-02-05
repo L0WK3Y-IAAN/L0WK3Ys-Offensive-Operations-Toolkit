@@ -23,6 +23,7 @@
 [Usage](#usage) •
 [Tools](#included-toolkits) •
 [Contributing](#contributing) •
+[Changelog](https://github.com/L0WK3Y-IAAN/L0WK3Ys-Offensive-Operations-Toolkit/blob/main/CHANGELOG.md)
 
 </div>
 
