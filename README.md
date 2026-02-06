@@ -70,10 +70,8 @@ A comprehensive suite for Android and iOS security analysis with a modern TUI in
 | **Hermes Dec** | Decompile React Native Hermes bytecode bundles |
 | **Android Backup Extractor** | Extract and analyze Android backup files |
 | **APK Builder + Installer** | Rebuild and sign modified APKs |
-| **Launch Drozer** | Start Drozer for dynamic Android analysis |
-| **Launch Medusa** | Start Medusa for Android instrumentation |
 | **Setup DNAT** | Configure network interception |
-| **Start MobSF** | Launch Mobile Security Framework |
+| **MobSF Scan** | Use MobSF API to scan an app |
 | **iProxy SSH** | iOS SSH tunneling via iProxy |
 
 ## Installation
@@ -196,7 +194,6 @@ Some tools require additional software:
 | Semgrep | `pip install semgrep` |
 | Nuclei | `brew install nuclei` or [download](https://github.com/projectdiscovery/nuclei) |
 | hermes-dec | Auto-cloned by Hermes Dec tool (requires Git) |
-| Drozer | [drozer](https://github.com/WithSecureLabs/drozer) |
 | MobSF | [docker](https://github.com/MobSF/Mobile-Security-Framework-MobSF) |
 
 ## Demos
