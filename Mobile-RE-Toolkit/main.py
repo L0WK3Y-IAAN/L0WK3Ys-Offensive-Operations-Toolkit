@@ -981,7 +981,7 @@ class MRETApp(App):
         if not path_str:
             file_import.hide()
             return
-            
+
         # Clean path (remove quotes that might be added by drag-drop)
         path_str = path_str.strip().strip('"').strip("'")
         

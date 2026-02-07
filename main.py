@@ -312,7 +312,7 @@ def run_toolkit(path: Path) -> bool:
     print(f"{'='*60}")
     
     try:
-        print("\n Returning to the launcher...")
+        input("\n Press Enter to return to LOOT...")
     except (KeyboardInterrupt, EOFError):
         pass
     
