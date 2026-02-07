@@ -87,7 +87,7 @@ A comprehensive suite for Android and iOS security analysis with a modern TUI in
 
 ```bash
 # Clone the repository
-git clone https://github.com/L0WK3Y-IAAN/L0WK3Y-Offensive-Operations-Toolkit.git
+git clone https://github.com/L0WK3Y-IAAN/L0WK3Ys-Offensive-Operations-Toolkit.git
 cd L0WK3Y-Offensive-Operations-Toolkit
 
 # Create virtual environment
