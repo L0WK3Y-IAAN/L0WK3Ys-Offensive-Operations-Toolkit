@@ -43,6 +43,7 @@ setup(
         "trio>=0.30.0",
         "websocket-client>=1.8.0",
         "prompt_toolkit>=3.0.50",
+        "semgrep>=1.151.0",
     ],
     extras_require={
         "dev": [
