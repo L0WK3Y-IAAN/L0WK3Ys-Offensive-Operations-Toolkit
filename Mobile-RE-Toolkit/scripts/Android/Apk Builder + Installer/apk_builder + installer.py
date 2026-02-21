@@ -374,24 +374,28 @@ def prompt_install(signed_apk):
         input("Press Enter to continue...")
         return
 
-    console.print("\n[bold magenta]📱 Connected Devices[/]\n")
-    table = Table(title="Available Devices", show_header=True, header_style="bold magenta")
-    table.add_column("Index", justify="center", style="cyan", no_wrap=True)
-    table.add_column("Device ID", style="green")
+    if len(devices) == 1:
+        selected_device = devices[0]
+        console.print(f"[cyan]Using the only connected device: {selected_device}[/]\n")
+    else:
+        console.print("\n[bold magenta]📱 Connected Devices[/]\n")
+        table = Table(title="Available Devices", show_header=True, header_style="bold magenta")
+        table.add_column("Index", justify="center", style="cyan", no_wrap=True)
+        table.add_column("Device ID", style="green")
 
-    for i, device in enumerate(devices, 1):
-        table.add_row(str(i), device)
+        for i, device in enumerate(devices, 1):
+            table.add_row(str(i), device)
 
-    console.print(table)
+        console.print(table)
 
-    while True:
-        choice = Prompt.ask("[bold cyan]Enter the number of the device to install the APK[/]").strip()
-        if choice.isdigit():
-            idx = int(choice)
-            if 1 <= idx <= len(devices):
-                selected_device = devices[idx - 1]
-                break
-        console.print("[red]⚠ Invalid selection. Try again.[/]")
+        while True:
+            choice = Prompt.ask("[bold cyan]Enter the number of the device to install the APK[/]").strip()
+            if choice.isdigit():
+                idx = int(choice)
+                if 1 <= idx <= len(devices):
+                    selected_device = devices[idx - 1]
+                    break
+            console.print("[red]⚠ Invalid selection. Try again.[/]")
 
     console.print(f"[cyan]Installing APK on device {selected_device}...[/]")
     try:

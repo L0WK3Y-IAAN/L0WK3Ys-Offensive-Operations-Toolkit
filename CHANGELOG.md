@@ -153,6 +153,18 @@ Dates use `YYYY‑MM‑DD` and entries are listed in chronological order from th
 
 ---
 
+## 2026-02-21 – Screen Mirror & APK Builder UX
+
+- **Screen Mirror: scrcpy-tool in Mobile-RE-Toolkit/Tools** (`Screen Mirror/screen_mirror.py`)
+  - Scrcpy is now installed under **`Mobile-RE-Toolkit/Tools/scrcpy-tool`** instead of the current working directory.
+  - Added `_get_toolkit_tools_dir()` to resolve the toolkit root (directory with `main.py` and `src/`) from the script path and return `Tools`; creates the directory if needed. Works regardless of where the script is run from (e.g. MRET launcher or terminal).
+
+- **APK Builder + Installer: auto-select single device** (`Apk Builder + Installer/apk_builder + installer.py`)
+  - When only one ADB device is connected, the script **automatically selects it** and skips the device selection prompt.
+  - Shows a short message: “Using the only connected device: &lt;serial&gt;”. When multiple devices are connected, the device table and number prompt behave as before.
+
+---
+
 ## Unreleased
 
 - (No unreleased changes recorded at this time.)

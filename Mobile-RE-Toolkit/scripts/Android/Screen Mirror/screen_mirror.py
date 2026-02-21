@@ -6,12 +6,34 @@ import tarfile
 import shutil
 import urllib.request
 import time
+from pathlib import Path
 
 # --- Configuration ---
 # Set the version you expect. If the installed version matches this, we skip download.
 # If you just want ANY version, we can relax the check, but this ensures consistency.
 SCRCPY_VERSION = "v3.3.4"
-INSTALL_DIR = os.path.join(os.getcwd(), "scrcpy-tool")
+
+
+def _get_toolkit_tools_dir():
+    """Return Mobile-RE-Toolkit/Tools directory (create if needed). Resolves from script location."""
+    script_dir = Path(__file__).resolve().parent
+    current = script_dir
+    for _ in range(12):
+        if (current / "main.py").exists() and (current / "src").exists():
+            tools = current / "Tools"
+            tools.mkdir(parents=True, exist_ok=True)
+            return tools
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    # Fallback: cwd/Tools
+    tools = Path.cwd() / "Tools"
+    tools.mkdir(parents=True, exist_ok=True)
+    return tools
+
+
+INSTALL_DIR = str(_get_toolkit_tools_dir() / "scrcpy-tool")
 LOCAL_BINARY = os.path.join(INSTALL_DIR, "scrcpy")
 
 URL_LINUX_X64 = f"https://github.com/Genymobile/scrcpy/releases/download/{SCRCPY_VERSION}/scrcpy-linux-x86_64-{SCRCPY_VERSION}.tar.gz"
