@@ -18,7 +18,9 @@ from geiger.core.reavs_scanner import ReavsScanner
 from geiger.utils.output import print_findings_table, save_json_report, save_html_report
 from geiger.utils.cleanup import cleanup_directory
 from geiger.utils.apk_selector import select_apk
+from geiger.utils.report_selector import select_report
 from geiger.utils.nuclei_installer import ensure_nuclei_installed
+from geiger.report_tui import run_report_tui
 
 app = typer.Typer(
     name="geiger",
@@ -257,9 +259,12 @@ def scan(
         if error:
             errors[apk_path] = error
         
-        # Print results
-        console.print(f"\n[bold]Results for {apk_path.name}:[/bold]")
-        print_findings_table(findings, apk_path.stem)
+        # Launch report TUI if we have findings (no terminal table)
+        if findings:
+            report_path = output_dir / apk_path.stem / f"{apk_path.stem}_report.json"
+            if report_path.exists():
+                console.print(f"\n[bold]Opening report in TUI: {apk_path.name}[/bold]\n")
+                run_report_tui(report_path.resolve())
         
     else:
         # Multiple APKs - use parallel processing
@@ -318,6 +323,13 @@ def scan(
         for apk_path, error in errors.items():
             console.print(f"  [red]✗ {apk_path.name}: {error}[/red]")
     
+    # If multiple APKs had findings, offer report selector to view one in TUI
+    if len(apk_files) > 1 and total_findings > 0:
+        console.print("\n[cyan]Open a report in the TUI?[/cyan]")
+        selected = select_report(output_dir)
+        if selected is not None:
+            run_report_tui(selected)
+    
     # Exit with appropriate code
     if total_errors > 0:
         sys.exit(1)
@@ -349,6 +361,37 @@ def templates(
     else:
         console.print("[red]✗ Failed to setup templates[/red]")
         sys.exit(1)
+
+
+@app.command()
+def view(
+    report_path: Optional[Path] = typer.Argument(
+        None,
+        help="Path to a Geiger JSON report (optional - show report selector if omitted)",
+        path_type=Path,
+        exists=True,
+    ),
+    reports_dir: Optional[Path] = typer.Option(
+        None,
+        "--reports-dir",
+        help="Directory to scan for reports (default: reports/geiger_reports)",
+        path_type=Path,
+    ),
+):
+    """
+    Open a Geiger report in the Textual TUI.
+    
+    If no path is given, lists all reports in geiger_reports for selection.
+    Shows severity, location, code snippet, and Open in Cursor/VSCode.
+    """
+    if report_path is not None:
+        run_report_tui(report_path.resolve())
+        return
+    selected = select_report(reports_dir or DEFAULT_OUTPUT_DIR)
+    if selected is None:
+        console.print("[yellow]No report selected. Exiting.[/yellow]")
+        sys.exit(0)
+    run_report_tui(selected)
 
 
 def main():

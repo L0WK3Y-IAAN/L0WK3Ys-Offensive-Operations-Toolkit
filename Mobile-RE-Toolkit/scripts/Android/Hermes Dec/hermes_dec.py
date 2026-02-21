@@ -25,6 +25,31 @@ console = Console()
 MAIN_PY = "main.py"
 HBC_DECOMPILER = "hbc_decompiler.py"
 
+# hermes-dec repo layout: root may have symlinks (hbc-decompiler -> src/decompilation/hbc_decompiler.py) or old flat layout
+def _hermes_dec_script_paths(hermes_dir: Path) -> Optional[Tuple[Path, Path, Path]]:
+    """Return (decompiler, disassembler, parser) paths if decompiler exists; else None. Supports both root and src/ layout."""
+    candidates_decomp = [
+        hermes_dir / "hbc_decompiler.py",
+        hermes_dir / "hbc-decompiler",
+        hermes_dir / "src" / "decompilation" / "hbc_decompiler.py",
+    ]
+    candidates_disasm = [
+        hermes_dir / "hbc_disassembler.py",
+        hermes_dir / "hbc-disassembler",
+        hermes_dir / "src" / "disassembly" / "hbc_disassembler.py",
+    ]
+    candidates_parser = [
+        hermes_dir / "hbc_file_parser.py",
+        hermes_dir / "hbc-file-parser",
+        hermes_dir / "src" / "parsers" / "hbc_file_parser.py",
+    ]
+    decomp = next((p for p in candidates_decomp if p.exists()), None)
+    disasm = next((p for p in candidates_disasm if p.exists()), None)
+    parser = next((p for p in candidates_parser if p.exists()), None)
+    if decomp is not None:
+        return (decomp, disasm or hermes_dir / "hbc_disassembler.py", parser or hermes_dir / "hbc_file_parser.py")
+    return None
+
 
 def get_toolkit_root() -> Path:
     """Resolve Mobile-RE-Toolkit root (contains main.py and src/)."""
@@ -61,12 +86,31 @@ def ensure_hermes_dec() -> Optional[Path]:
     tools_dir = get_tools_dir()
     hermes_dir = tools_dir / "hermes-dec"
     
-    # Check if already exists
-    if hermes_dir.exists() and (hermes_dir / HBC_DECOMPILER).exists():
-        console.print(f"[green]✅ hermes-dec found at: {hermes_dir}[/green]")
-        return hermes_dir
+    # If directory already exists, skip clone and use it (optionally update via git pull)
+    if hermes_dir.exists():
+        if _hermes_dec_script_paths(hermes_dir) is not None:
+            console.print(f"[green]✅ hermes-dec found at: {hermes_dir}[/green]")
+            return hermes_dir
+        # Directory exists but decompiler missing – try updating
+        if (hermes_dir / ".git").exists():
+            console.print(f"[cyan]📥 hermes-dec already exists; updating...[/cyan]")
+            try:
+                subprocess.run(
+                    ["git", "pull"],
+                    cwd=hermes_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+            except Exception:
+                pass
+        if _hermes_dec_script_paths(hermes_dir) is not None:
+            console.print(f"[green]✅ hermes-dec ready at: {hermes_dir}[/green]")
+            return hermes_dir
+        console.print(f"[red]❌ {hermes_dir} exists but decompiler not found. Remove the directory to re-clone.[/red]")
+        return None
     
-    # Clone if not exists
+    # Clone only when directory does not exist
     console.print(f"[cyan]📥 Cloning hermes-dec to: {hermes_dir}[/cyan]")
     try:
         result = subprocess.run(
@@ -79,11 +123,11 @@ def ensure_hermes_dec() -> Optional[Path]:
             console.print(f"[red]❌ Failed to clone hermes-dec: {result.stderr}[/red]")
             return None
         
-        if (hermes_dir / HBC_DECOMPILER).exists():
+        if _hermes_dec_script_paths(hermes_dir) is not None:
             console.print("[green]✅ hermes-dec cloned successfully[/green]")
             return hermes_dir
         else:
-            console.print(f"[red]❌ hermes-dec cloned but {HBC_DECOMPILER} not found[/red]")
+            console.print(f"[red]❌ hermes-dec cloned but decompiler not found[/red]")
             return None
     except subprocess.TimeoutExpired:
         console.print("[red]❌ Git clone timed out[/red]")
@@ -258,9 +302,15 @@ def decompile_bundle(bundle_path: Path, output_dir: Path, hermes_dir: Path) -> b
     hermes_output = output_dir / "hermes_decompiled"
     hermes_output.mkdir(parents=True, exist_ok=True)
     
+    # Resolve script paths (supports root and src/ layout)
+    scripts = _hermes_dec_script_paths(hermes_dir)
+    if not scripts:
+        console.print("[red]❌ hermes-dec decompiler not found[/red]")
+        return False
+    _decomp_script, disasm_script, parser_script = scripts
+
     # Run hbc-file-parser
     console.print("[cyan]📋 Parsing bundle file headers...[/cyan]")
-    parser_script = hermes_dir / "hbc_file_parser.py"
     if parser_script.exists():
         try:
             result = subprocess.run(
@@ -282,7 +332,6 @@ def decompile_bundle(bundle_path: Path, output_dir: Path, hermes_dir: Path) -> b
     
     # Run hbc-disassembler
     console.print("[cyan]🔨 Disassembling bytecode...[/cyan]")
-    disasm_script = hermes_dir / "hbc_disassembler.py"
     disasm_output = hermes_output / "disassembly.hasm"
     
     if disasm_script.exists():
@@ -319,13 +368,12 @@ def decompile_bundle(bundle_path: Path, output_dir: Path, hermes_dir: Path) -> b
     
     # Run hbc-decompiler
     console.print("[cyan]📝 Decompiling to pseudo-code...[/cyan]")
-    decomp_script = hermes_dir / HBC_DECOMPILER
     decomp_output = hermes_output / "decompiled.js"
     
-    if decomp_script.exists():
+    if _decomp_script.exists():
         try:
             result = subprocess.run(
-                [sys.executable, str(decomp_script), str(bundle_path), str(decomp_output)],
+                [sys.executable, str(_decomp_script), str(bundle_path), str(decomp_output)],
                 capture_output=True,
                 text=True,
                 timeout=120
@@ -352,7 +400,7 @@ def decompile_bundle(bundle_path: Path, output_dir: Path, hermes_dir: Path) -> b
             console.print(f"[red]❌ Error running decompiler: {e}[/red]")
             return False
     else:
-        console.print(f"[red]❌ Decompiler script not found: {decomp_script}[/red]")
+        console.print(f"[red]❌ Decompiler script not found: {_decomp_script}[/red]")
         return False
     
     # Check if we actually got any successful output

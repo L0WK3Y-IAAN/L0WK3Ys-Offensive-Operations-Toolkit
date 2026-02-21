@@ -134,6 +134,25 @@ Dates use `YYYY‑MM‑DD` and entries are listed in chronological order from th
 
 ---
 
+## 2026-02-20 – Geiger Report TUI & Hermes Dec Robustness
+
+- **Geiger report TUI and selector** (`report_tui.py`, `report_selector.py`, `geiger/main.py`)
+  - Restored and fixed the **Geiger report viewer** (Textual TUI) for JSON reports:
+    - **Report selector**: `geiger/utils/report_selector.py` scans `reports/geiger_reports` for `*_report.json`, lists them in a table, and supports selection by number or fuzzy name (prompt_toolkit).
+    - **Report TUI** (`geiger/report_tui.py`): DataTable of findings (index, severity, name, file); detail panel with severity, location, snippet, description; file path as a single clickable control that opens the file in Cursor or VS Code with `--goto path:line` when a line is available; **Open in jadx** button that resolves the APK from the report and launches jadx-gui/jadx.
+    - Resolves finding paths from class names to extraction smali paths under `src/output/geiger/<apk>_EXTRACTION/apktool`.
+  - **CSS and behaviour fixes** for the report TUI:
+    - Replaced invalid `text-decoration` with Textual’s `text-style: underline` / `text-style: none`.
+    - Set `#detail-file-link` to `min-height: 1` and `height: 1` (no `auto`) to avoid `StyleValueError: 'auto' not allowed here`.
+    - Fixed `DataTable.RowSelected` handler to use `event.cursor_row` instead of `event.row_index`.
+  - Wired `run_report_tui` into `geiger main.py` so `geiger view` and post-scan report opening use the TUI.
+
+- **Hermes Dec: skip clone when present & support new repo layout** (`Hermes Dec/hermes_dec.py`)
+  - **Skip cloning when tool already exists**: If `Tools/hermes-dec` already exists, the script no longer runs `git clone` (avoiding “destination path already exists”). It uses the existing directory and, if the decompiler script is missing, runs `git pull` and re-checks before failing.
+  - **Support current hermes-dec repo layout**: The P1sec hermes-dec repo now uses `src/decompilation/`, `src/disassembly/`, `src/parsers/` and root symlinks (`hbc-decompiler`, `hbc-disassembler`, `hbc-file-parser`). Added `_hermes_dec_script_paths(hermes_dir)` to resolve decompiler, disassembler, and parser scripts for both the old flat layout and the new layout, so existing clones work without re-cloning.
+
+---
+
 ## Unreleased
 
 - (No unreleased changes recorded at this time.)
