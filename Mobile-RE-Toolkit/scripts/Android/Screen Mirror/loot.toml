@@ -1,0 +1,8 @@
+name = "Screen Mirror"
+# The README's description line isn't bolded, so the old README-scraping
+# fallback (first **bold** segment) was grabbing "**Python 3**" from the
+# Requirements section instead. This is the real description.
+description = "Mirror an Android device screen to your computer using scrcpy"
+platforms = ["Android"]
+requires_args = false
+binaries = ["adb", "scrcpy"]

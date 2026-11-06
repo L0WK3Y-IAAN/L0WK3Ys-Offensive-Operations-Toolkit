@@ -1,0 +1,5 @@
+name = "Run Android Studio Emulator"
+description = "Runs Android Studio AVDs"
+platforms = ["Android"]
+requires_args = false
+binaries = ["emulator"]

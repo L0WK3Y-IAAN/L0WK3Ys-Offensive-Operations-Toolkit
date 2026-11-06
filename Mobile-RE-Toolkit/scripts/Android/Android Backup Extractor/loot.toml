@@ -1,0 +1,4 @@
+name = "Android Backup Extractor"
+description = "Extract & Convert .ab Android Backup Files for Analysis"
+platforms = ["Android"]
+requires_args = false

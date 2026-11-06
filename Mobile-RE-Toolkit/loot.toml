@@ -1,0 +1,6 @@
+# Metadata for the Mobile-RE-Toolkit module, read by the root LOOT
+# launcher (../main.py). See scripts/**/loot.toml for per-script metadata
+# read by this toolkit's own launcher (main.py).
+name = "Mobile-RE-Toolkit"
+category = "Mobile"
+description = "Mobile Reverse Engineering Toolkit for Android & iOS security analysis"

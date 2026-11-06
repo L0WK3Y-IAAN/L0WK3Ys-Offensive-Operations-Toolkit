@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # MRET: no_args
-# MRET: platforms: All
+# MRET: platforms: Android, iOS
 # ---------------------------------------------------------------------------
 # MobSF Scanner - Start MobSF, select APKs/IPAs, scan, and generate reports
 # ---------------------------------------------------------------------------

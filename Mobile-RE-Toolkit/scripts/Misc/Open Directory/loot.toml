@@ -1,0 +1,4 @@
+name = "Open Directory"
+description = "Open file explorer in project root directory"
+platforms = ["Misc"]
+requires_args = false

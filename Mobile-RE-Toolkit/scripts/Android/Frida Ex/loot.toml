@@ -1,0 +1,6 @@
+name = "Frida Ex"
+description = "FridaEX is an automation tool designed to simplify Frida script injection for Android applications. It automatically detects connected devices, manages Frida server installation and execution, lists installed apps, and allows seamless Frida script injection. The tool also provides an interactive Frida shell after injection for real-time debugging and analysis."
+platforms = ["Android"]
+requires_args = false
+binaries = ["adb", "frida"]
+requirements = ["frida", "frida-tools"]

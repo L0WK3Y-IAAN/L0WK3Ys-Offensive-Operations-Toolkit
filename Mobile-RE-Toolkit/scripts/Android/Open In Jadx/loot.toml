@@ -1,0 +1,5 @@
+name = "Open In Jadx"
+description = "Opens APK's within the project directories (src an src/pulled_apks) in JADX"
+platforms = ["Android"]
+requires_args = false
+binaries = ["jadx-gui"]

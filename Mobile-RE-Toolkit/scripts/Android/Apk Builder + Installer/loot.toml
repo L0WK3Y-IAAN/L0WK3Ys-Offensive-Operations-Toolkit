@@ -1,0 +1,5 @@
+name = "Apk Builder + Installer"
+description = "APK Builder is a Python script that automates the process of recompiling and signing decompiled Android applications (APKs). It utilizes apktool for rebuilding APKs and apksigner for signing them with a debug keystore. Additionally, it offers an option to clean up leftover files after the build process. You also have the option to install APKs to your device as well"
+platforms = ["Android"]
+requires_args = false
+binaries = ["adb", "apktool", "apksigner"]

@@ -1,0 +1,4 @@
+name = "Frida Script Downloader"
+description = "A Frida Script Downloader that fetches scripts from codeshare.frida.re. It also supports interactive search with auto-completion"
+platforms = ["Android"]
+requires_args = false

@@ -1,0 +1,4 @@
+name = "Strings Of Interest"
+description = "Detects suspicious indicators in extracted APK strings"
+platforms = ["Android"]
+requires_args = false

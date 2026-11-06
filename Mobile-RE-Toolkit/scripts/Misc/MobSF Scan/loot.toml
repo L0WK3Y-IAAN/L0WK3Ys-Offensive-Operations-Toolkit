@@ -1,0 +1,9 @@
+name = "MobSF Scan"
+description = "Automated mobile security analysis using MobSF (Mobile Security Framework)"
+# Lives under Misc as the one canonical copy; declaring Android+iOS here
+# (instead of "All") is what makes it show up under those platform tabs
+# too, without a physical duplicate in each folder - see
+# discover_scripts()/scan_platform() in main.py.
+platforms = ["Android", "iOS"]
+requires_args = false
+binaries = ["docker"]
