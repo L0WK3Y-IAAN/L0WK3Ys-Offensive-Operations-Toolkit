@@ -19,7 +19,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_module(name: str, path: Path):
-    """Import a script by path without needing it to be a package."""
+    """Import a script by path without needing it to be a package.
+
+    Running a script directly (`python main.py`) auto-prepends the
+    script's own directory to sys.path, which is how main.py's bare
+    `from loot_shared import ...` resolves. Loading it this way via
+    importlib doesn't get that for free, so do it explicitly - whether
+    this is needed depends on how pytest itself was invoked (`python -m
+    pytest` prepends the cwd; a bare `pytest` doesn't), so don't rely on
+    that either.
+    """
+    script_dir = str(path.resolve().parent)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
