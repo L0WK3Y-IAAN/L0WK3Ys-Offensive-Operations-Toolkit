@@ -1,0 +1,22 @@
+# =============================================================================
+# Mobile-RE-Toolkit (MRET) - Requirements
+# =============================================================================
+#
+# This is the file the LOOT launcher (../main.py) walks up the directory
+# tree to find before running any script under scripts/. Keep it in sync
+# with the actual third-party imports used by MRET's main.py and its
+# scripts.
+#
+# Install with: pip install -r Mobile-RE-Toolkit/requirements.txt
+# =============================================================================
+
+rich>=14.0.0
+prompt-toolkit>=3.0.50
+requests>=2.32.0
+beautifulsoup4>=4.13.0
+selenium>=4.34.0
+typer>=0.9.0
+
+# Android instrumentation (Frida Ex, Frida Script Downloader)
+frida>=16.0.0
+frida-tools>=12.0.0
