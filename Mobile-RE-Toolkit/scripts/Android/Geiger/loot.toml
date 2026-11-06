@@ -1,0 +1,6 @@
+name = "Geiger"
+description = "Comprehensive static analysis for Android APKs using Nuclei templates and reAVS taint analysis"
+platforms = ["Android"]
+requires_args = true
+args_info = "scan [APK] [-o OUTPUT] [--reavs] [--threads N] | templates [--update]"
+binaries = ["jadx", "apktool", "nuclei", "git"]

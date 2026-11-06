@@ -12,7 +12,7 @@ import importlib.util
 from pathlib import Path
 from dataclasses import dataclass
 
-from loot_shared import reset_terminal
+from loot_shared import reset_terminal, load_loot_toml
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -135,8 +135,14 @@ def pull_updates(repo_root: Path) -> tuple[bool, str]:
 
 
 def detect_category(folder_name: str, main_py_path: Path) -> str:
-    """Detect the category of a toolkit based on markers or folder name."""
-    # First, check for explicit marker in main.py
+    """Detect the category of a toolkit: loot.toml > # LOOT: marker >
+    folder-name pattern match."""
+    toml = load_loot_toml(main_py_path.parent)
+    toml_category = toml.get("category")
+    if isinstance(toml_category, str) and toml_category in CATEGORIES:
+        return toml_category
+
+    # Fall back to the explicit marker in main.py
     try:
         content = main_py_path.read_text(encoding='utf-8', errors='ignore')
         for line in content.split('\n')[:30]:  # Check first 30 lines
@@ -158,10 +164,15 @@ def detect_category(folder_name: str, main_py_path: Path) -> str:
 
 
 def get_toolkit_description(main_py_path: Path) -> str:
-    """Get description from toolkit's main.py docstring or marker."""
+    """Get description: loot.toml > # LOOT: marker > docstring."""
+    toml = load_loot_toml(main_py_path.parent)
+    toml_description = toml.get("description")
+    if isinstance(toml_description, str) and toml_description.strip():
+        return toml_description.strip()
+
     try:
         content = main_py_path.read_text(encoding='utf-8', errors='ignore')
-        
+
         # Check for LOOT: description marker
         for line in content.split('\n')[:30]:
             if '# LOOT: description:' in line:
@@ -221,14 +232,45 @@ _PACKAGE_TO_IMPORT_NAME = {
 }
 
 
+_PY_VERSION_MARKER_RE = re.compile(
+    r'python_version\s*(<=|>=|==|!=|<|>)\s*["\']([\d.]+)["\']'
+)
+
+
+def _environment_marker_applies(line: str) -> bool:
+    """Evaluate a requirement's `; python_version <op> "X.Y"` marker, if
+    present, against the running interpreter. Any other marker (or none
+    at all) is treated as applying, so this only ever narrows things
+    down for the one marker form actually used in this repo's
+    requirements.txt files - it's not a general PEP 508 evaluator."""
+    if ";" not in line:
+        return True
+    marker = line.split(";", 1)[1]
+    match = _PY_VERSION_MARKER_RE.search(marker)
+    if not match:
+        return True
+    op, version_str = match.groups()
+    required = tuple(int(p) for p in version_str.split("."))
+    current = sys.version_info[: len(required)]
+    ops = {
+        "<": lambda a, b: a < b, "<=": lambda a, b: a <= b,
+        ">": lambda a, b: a > b, ">=": lambda a, b: a >= b,
+        "==": lambda a, b: a == b, "!=": lambda a, b: a != b,
+    }
+    return ops[op](current, required)
+
+
 def _parse_requirement_names(req_file: Path) -> list[str]:
     """Pull bare package names out of a requirements.txt (ignores comments,
-    blank lines, and version/extras specifiers)."""
+    blank lines, version/extras specifiers, and lines whose environment
+    marker doesn't match the running interpreter)."""
     names = []
     try:
         for raw_line in req_file.read_text(encoding="utf-8", errors="ignore").splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#") or line.startswith("-"):
+                continue
+            if not _environment_marker_applies(line):
                 continue
             # Strip extras ("pkg[extra]"), then any version/marker specifier
             name = re.split(r"[<>=!~;\[\s]", line, maxsplit=1)[0].strip()
@@ -621,8 +663,10 @@ class ToolkitLauncher(App):
             
             main_py = child_dir / "main.py"
             if main_py.exists() and main_py.is_file():
-                name = child_dir.name
-                category = detect_category(name, main_py)
+                toml = load_loot_toml(child_dir)
+                toml_name = toml.get("name")
+                name = toml_name.strip() if isinstance(toml_name, str) and toml_name.strip() else child_dir.name
+                category = detect_category(child_dir.name, main_py)
                 description = get_toolkit_description(main_py)
                 toolkits.append(ToolkitInfo(
                     name=name,

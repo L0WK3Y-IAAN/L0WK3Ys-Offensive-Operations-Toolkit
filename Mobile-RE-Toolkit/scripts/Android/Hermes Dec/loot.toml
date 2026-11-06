@@ -1,0 +1,5 @@
+name = "Hermes Dec"
+description = "Decompiles React Native Hermes bytecode bundles from extracted APKs"
+platforms = ["Android"]
+requires_args = false
+binaries = ["git", "hermes-dec"]

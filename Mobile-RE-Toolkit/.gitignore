@@ -6,6 +6,7 @@
 !main.py
 !setup.py
 !requirements.txt
+!loot.toml
 
 # Include scripts directory and all its contents
 !scripts/

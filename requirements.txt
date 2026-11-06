@@ -12,3 +12,7 @@
 
 # Main Launcher (Textual TUI)
 textual>=0.47.0
+
+# loot.toml parsing (shared/loot_shared.py). Stdlib `tomllib` covers
+# Python 3.11+; this fills in the gap on 3.10.
+tomli>=2.0.0; python_version < "3.11"

@@ -11,12 +11,27 @@ entry points.
 
 import os
 import sys
+from pathlib import Path
+from typing import Any, Dict
 
 try:
     import termios
     HAS_TERMIOS = True
 except ImportError:
     HAS_TERMIOS = False
+
+# tomllib is stdlib on 3.11+; on 3.10 we fall back to the `tomli` package
+# (declared in requirements.txt with a python_version<"3.11" marker). If
+# neither is importable, loot.toml support just no-ops everywhere it's
+# used - callers fall back to their pre-existing marker/heuristic logic,
+# so a toml-less environment still works exactly as before this feature.
+try:
+    import tomllib  # type: ignore[import-not-found]
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib  # type: ignore[import-not-found,no-redef]
+    except ModuleNotFoundError:
+        tomllib = None  # type: ignore[assignment]
 
 
 def reset_terminal() -> None:
@@ -32,3 +47,25 @@ def reset_terminal() -> None:
             os.system('cls 2>nul')
     except Exception:
         pass
+
+
+def load_loot_toml(directory: Path) -> Dict[str, Any]:
+    """Read `<directory>/loot.toml` and return it as a dict, or {} if the
+    file doesn't exist, can't be parsed, or no toml backend is available.
+
+    This never raises: a missing or broken loot.toml should mean "no
+    metadata override", not "crash the launcher". Callers combine this
+    with their own fallback (comment markers, README, docstring, etc.)
+    for any key the file doesn't provide.
+    """
+    if tomllib is None:
+        return {}
+    path = Path(directory) / "loot.toml"
+    if not path.is_file():
+        return {}
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}

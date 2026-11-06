@@ -1,0 +1,5 @@
+name = "APK Extraction"
+description = "Extracts readable strings from decompiled APKs and DEX files"
+platforms = ["Android"]
+requires_args = false
+binaries = ["jadx", "apktool", "java"]

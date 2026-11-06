@@ -1,0 +1,7 @@
+name = "Semgrep Scan"
+description = "Scan Android codebases for security vulnerabilities using Semgrep with specialized Android security rules. Generates both JSON and beautiful HTML reports with syntax highlighting."
+platforms = ["Android"]
+requires_args = true
+args_info = "scan (select & decompile APK) | code (select codebase via dialog)"
+binaries = ["semgrep", "java", "git"]
+requirements = ["semgrep"]

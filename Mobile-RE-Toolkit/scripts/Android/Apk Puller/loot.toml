@@ -1,0 +1,5 @@
+name = "Apk Puller"
+description = "This script allows you to list and extract APKs from a connected Android device using adb."
+platforms = ["Android"]
+requires_args = false
+binaries = ["adb"]

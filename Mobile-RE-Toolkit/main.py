@@ -42,13 +42,16 @@ GITIGNORE_PATH = (HERE / ".gitignore").resolve()
 # fully standalone.
 try:
     sys.path.insert(0, str(HERE.parent))
-    from loot_shared import reset_terminal
+    from loot_shared import reset_terminal, load_loot_toml
 except ImportError:
     def reset_terminal() -> None:
         try:
             os.system('stty sane 2>/dev/null')
         except Exception:
             pass
+
+    def load_loot_toml(_directory: Path) -> Dict:
+        return {}
 
 BANNER = """
 ███╗   ███╗ ██████╗  ███████╗ ████████╗
@@ -109,8 +112,15 @@ def find_readme(folder: Path) -> Path | None:
     return cand[0] if cand else None
 
 
-def get_description_from_readme(folder_path: Path) -> str:
-    """Extract description from README's first bold segment."""
+def get_description_from_readme(folder_path: Path, toml: Optional[Dict] = None) -> str:
+    """Get a script's description: loot.toml `description` > README's
+    first bold segment."""
+    if toml is None:
+        toml = load_loot_toml(folder_path)
+    toml_description = toml.get("description")
+    if isinstance(toml_description, str) and toml_description.strip():
+        return toml_description.strip()
+
     readme = find_readme(folder_path)
     if not readme:
         return "No description available"
@@ -127,34 +137,54 @@ def get_description_from_readme(folder_path: Path) -> str:
     return desc or "No description available"
 
 
-def get_script_args_info(script_path: Path) -> str:
-    """Extract argument documentation from script using MRET marker.
-    
-    Looks for: # MRET: args_info: <description>
-    """
+def get_script_args_info(script_path: Path, toml: Optional[Dict] = None) -> str:
+    """Get a script's argument documentation: loot.toml `args_info` >
+    `# MRET: args_info: <description>` marker."""
+    if toml is None:
+        toml = load_loot_toml(script_path.parent)
+    toml_args_info = toml.get("args_info")
+    if isinstance(toml_args_info, str) and toml_args_info.strip():
+        return toml_args_info.strip()
+
     try:
         if not script_path.exists():
             return ""
-        
+
         content = script_path.read_text(encoding="utf-8", errors="ignore")
-        
+
         # Look for args_info marker
         match = re.search(r"#\s*MRET:\s*args_info:\s*(.+)$", content, re.MULTILINE | re.IGNORECASE)
         if match:
             return match.group(1).strip()
-        
+
         return ""
     except Exception:
         return ""
 
 
-def get_script_platforms(script_path: Path, default_platform: str) -> List[str]:
-    """Extract supported platforms from script using MRET marker.
+def _normalize_toml_platforms(toml_platforms) -> List[str]:
+    """Validate a loot.toml `platforms` list, expanding "All"."""
+    if not isinstance(toml_platforms, list) or not toml_platforms:
+        return []
+    names = [str(p).strip() for p in toml_platforms]
+    if any(p.lower() == "all" for p in names):
+        return ["Android", "iOS", "Misc"]
+    return [p for p in names if p in ["Android", "iOS", "Misc"]]
 
-    Looks for: # MRET: platforms: Android, iOS
-    "All" expands to every platform. Returns [default_platform] if the
-    marker is absent or doesn't resolve to anything valid.
+
+def get_script_platforms(script_path: Path, default_platform: str, toml: Optional[Dict] = None) -> List[str]:
+    """Get a script's supported platforms: loot.toml `platforms` >
+    `# MRET: platforms: Android, iOS` marker.
+
+    "All" (in either source) expands to every platform. Returns
+    [default_platform] if neither source resolves to anything valid.
     """
+    if toml is None:
+        toml = load_loot_toml(script_path.parent)
+    valid = _normalize_toml_platforms(toml.get("platforms"))
+    if valid:
+        return valid
+
     try:
         if not script_path.exists():
             return [default_platform]
@@ -178,10 +208,17 @@ def get_script_platforms(script_path: Path, default_platform: str) -> List[str]:
         return [default_platform]
 
 
-def _script_declares_platform(script_path: Path, target_platform: str) -> bool:
-    """True only when the script's own '# MRET: platforms:' marker lists
-    target_platform (or 'All'). Unlike get_script_platforms, this never
-    falls back to a default - a script with no marker declares nothing."""
+def _script_declares_platform(script_path: Path, target_platform: str, toml: Optional[Dict] = None) -> bool:
+    """True only when the script explicitly declares target_platform (or
+    'All') via loot.toml `platforms` or its own '# MRET: platforms:'
+    marker. Unlike get_script_platforms, this never falls back to a
+    default - a script with neither source declares nothing."""
+    if toml is None:
+        toml = load_loot_toml(script_path.parent)
+    toml_valid = _normalize_toml_platforms(toml.get("platforms"))
+    if toml_valid:
+        return target_platform in toml_valid
+
     try:
         content = script_path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
@@ -193,36 +230,43 @@ def _script_declares_platform(script_path: Path, target_platform: str) -> bool:
     return "all" in declared or target_platform.lower() in declared
 
 
-def check_script_requires_args(script_path: Path, visited: Optional[set] = None) -> bool:
+def check_script_requires_args(script_path: Path, visited: Optional[set] = None, toml: Optional[Dict] = None) -> bool:
     """Check if a script requires command-line arguments.
-    
+
     Detection methods (in priority order):
-    1. # MRET: no_args      -> Force OFF (no args indicator)
-    2. # MRET: requires_args -> Force ON (show args indicator)
-    3. Auto-detection of argparse, typer, click, sys.argv usage
+    1. loot.toml `requires_args`
+    2. # MRET: no_args      -> Force OFF (no args indicator)
+    3. # MRET: requires_args -> Force ON (show args indicator)
+    4. Auto-detection of argparse, typer, click, sys.argv usage
     """
     if visited is None:
         visited = set()
-    
+
     script_str = str(script_path)
     if script_str in visited:
         return False
     visited.add(script_str)
-    
+
+    if toml is None:
+        toml = load_loot_toml(script_path.parent)
+    toml_requires_args = toml.get("requires_args")
+    if isinstance(toml_requires_args, bool):
+        return toml_requires_args
+
     try:
         if not script_path.exists():
             return False
-        
+
         content = script_path.read_text(encoding="utf-8", errors="ignore")
-        
+
         # Check for explicit "no args" marker (highest priority - overrides everything)
         if re.search(r"#\s*MRET:\s*no_args", content, re.IGNORECASE):
             return False
-        
+
         # Check for explicit "requires args" marker
         if re.search(r"#\s*MRET:\s*requires_args", content, re.IGNORECASE):
             return True
-        
+
         # Auto-detect common argument parsing patterns
         patterns = [
             r"argparse\.ArgumentParser",
@@ -235,11 +279,11 @@ def check_script_requires_args(script_path: Path, visited: Optional[set] = None)
             r"typer\.Option",
             r"typer\.Argument",
         ]
-        
+
         for pattern in patterns:
             if re.search(pattern, content):
                 return True
-        
+
         return False
     except Exception:
         return False
@@ -320,14 +364,16 @@ def discover_scripts(platform: str = "All", deduplicate: bool = True) -> List[Sc
                         continue
                     if not _is_main_script(file_path, walk_dir):
                         continue
-                    if require_marker and not _script_declares_platform(file_path, plat):
+                    toml = load_loot_toml(file_path.parent)
+                    if require_marker and not _script_declares_platform(file_path, plat, toml=toml):
                         continue
                     seen_paths.add(file_path)
-                    name = prettify_script_name(file)
-                    desc = get_description_from_readme(file_path.parent)
-                    requires_args = check_script_requires_args(file_path)
-                    args_info = get_script_args_info(file_path) if requires_args else ""
-                    supported_platforms = get_script_platforms(file_path, plat)
+                    toml_name = toml.get("name")
+                    name = toml_name.strip() if isinstance(toml_name, str) and toml_name.strip() else prettify_script_name(file)
+                    desc = get_description_from_readme(file_path.parent, toml=toml)
+                    requires_args = check_script_requires_args(file_path, toml=toml)
+                    args_info = get_script_args_info(file_path, toml=toml) if requires_args else ""
+                    supported_platforms = get_script_platforms(file_path, plat, toml=toml)
                     results.append(ScriptInfo(
                         path=file_path,
                         name=name,
@@ -427,7 +473,12 @@ def organize_scripts():
 # Keep this list in sync with the `subprocess`/`shutil.which` calls in
 # scripts/**/*.py - it's the one place that documents what a full MRET
 # setup actually requires outside of pip.
-REQUIRED_BINARIES: Dict[str, str] = {
+# Fallback documentation for a binary not (yet) declared by any module's
+# loot.toml `binaries` list - a safety net for scripts that haven't been
+# migrated to loot.toml. _collect_required_binaries() below prefers
+# whatever loot.toml files actually declare and only falls back to this
+# for anything they don't cover.
+_DEFAULT_REQUIRED_BINARIES: Dict[str, str] = {
     "adb": "Apk Puller, Apk Builder + Installer, Frida Ex, Screen Mirror",
     "jadx": "APK Extraction, Geiger",
     "apktool": "APK Extraction, Apk Builder + Installer, Geiger",
@@ -440,6 +491,35 @@ REQUIRED_BINARIES: Dict[str, str] = {
     "nuclei": "Geiger",
     "hermes-dec": "Hermes Dec",
 }
+
+
+def _collect_required_binaries() -> Dict[str, str]:
+    """Merge every module's loot.toml `binaries` list into one
+    binary -> "who needs it" table, falling back to the static table
+    above for anything no loot.toml declares."""
+    from_toml: Dict[str, List[str]] = {}
+    if SCRIPT_DIR.is_dir():
+        for toml_path in SCRIPT_DIR.rglob("loot.toml"):
+            toml = load_loot_toml(toml_path.parent)
+            binaries = toml.get("binaries")
+            if not isinstance(binaries, list):
+                continue
+            who = toml.get("name") or toml_path.parent.name
+            for binary in binaries:
+                binary = str(binary).strip()
+                if not binary:
+                    continue
+                from_toml.setdefault(binary, [])
+                if who not in from_toml[binary]:
+                    from_toml[binary].append(who)
+
+    merged = {binary: ", ".join(who) for binary, who in from_toml.items()}
+    for binary, who in _DEFAULT_REQUIRED_BINARIES.items():
+        merged.setdefault(binary, who)
+    return merged
+
+
+REQUIRED_BINARIES: Dict[str, str] = _collect_required_binaries()
 
 
 def check_system_binaries() -> Tuple[List[str], List[str]]:

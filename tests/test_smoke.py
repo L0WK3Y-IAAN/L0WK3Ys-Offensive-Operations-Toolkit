@@ -61,3 +61,40 @@ def test_check_system_binaries_returns_sorted_found_and_missing():
     assert sorted(missing) == missing
     assert set(found) | set(missing) == set(mod.REQUIRED_BINARIES)
     assert set(found) & set(missing) == set()
+
+
+def test_every_script_module_has_a_parseable_loot_toml():
+    """Every module folder under scripts/**  that has loot.toml should
+    parse to a non-empty dict - catches a typo breaking the file
+    silently (load_loot_toml swallows parse errors by design, so this
+    is the one place that would otherwise go unnoticed)."""
+    mret_main = REPO_ROOT / "Mobile-RE-Toolkit" / "main.py"
+    mod = _load_module("loot_mret_main_toml", mret_main)
+
+    toml_files = list(mod.SCRIPT_DIR.rglob("loot.toml"))
+    assert len(toml_files) >= 1, "expected at least one scripts/**/loot.toml"
+    for toml_path in toml_files:
+        data = mod.load_loot_toml(toml_path.parent)
+        assert data, f"{toml_path} parsed to an empty/invalid dict"
+        assert isinstance(data.get("name"), str) and data["name"].strip(), (
+            f"{toml_path} is missing a non-empty `name`"
+        )
+
+
+def test_mobsf_scan_shows_under_android_and_ios_without_duplicate_files():
+    """Regression test for the MobSF Scan dedup: the script should
+    resolve under Android, iOS, and Misc from the single canonical copy,
+    declared via loot.toml rather than a physical copy in each folder."""
+    mret_main = REPO_ROOT / "Mobile-RE-Toolkit" / "main.py"
+    mod = _load_module("loot_mret_main_dedup", mret_main)
+
+    for platform in ("Android", "iOS", "Misc"):
+        matches = [s for s in mod.discover_scripts(platform, deduplicate=False) if s.name == "MobSF Scan"]
+        assert len(matches) == 1, f"expected exactly one MobSF Scan entry under {platform}"
+        assert sorted(matches[0].supported_platforms) == ["Android", "iOS"]
+
+    # And it must not have leaked into folders it doesn't declare.
+    android_names = {s.name for s in mod.discover_scripts("Android", deduplicate=False)}
+    ios_names = {s.name for s in mod.discover_scripts("iOS", deduplicate=False)}
+    assert "Open Directory" not in android_names
+    assert "Open Directory" not in ios_names
