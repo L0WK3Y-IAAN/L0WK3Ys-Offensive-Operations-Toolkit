@@ -36,6 +36,20 @@ HERE = Path(__file__).resolve().parent
 SCRIPT_DIR = (HERE / "scripts").resolve()
 GITIGNORE_PATH = (HERE / ".gitignore").resolve()
 
+# MRET lives inside the LOOT monorepo and normally shares loot_shared.py
+# (at the repo root) with the root launcher. Fall back to a minimal local
+# implementation so this file still works if it's ever copied out and run
+# fully standalone.
+try:
+    sys.path.insert(0, str(HERE.parent))
+    from loot_shared import reset_terminal
+except ImportError:
+    def reset_terminal() -> None:
+        try:
+            os.system('stty sane 2>/dev/null')
+        except Exception:
+            pass
+
 BANNER = """
 ███╗   ███╗ ██████╗  ███████╗ ████████╗
 ████╗ ████║ ██╔══██╗ ██╔════╝ ╚══██╔══╝
@@ -136,29 +150,47 @@ def get_script_args_info(script_path: Path) -> str:
 
 def get_script_platforms(script_path: Path, default_platform: str) -> List[str]:
     """Extract supported platforms from script using MRET marker.
-    
+
     Looks for: # MRET: platforms: Android, iOS
-    Returns list of platforms, or [default_platform] if not specified.
+    "All" expands to every platform. Returns [default_platform] if the
+    marker is absent or doesn't resolve to anything valid.
     """
     try:
         if not script_path.exists():
             return [default_platform]
-        
+
         content = script_path.read_text(encoding="utf-8", errors="ignore")
-        
+
         # Look for platforms marker
         match = re.search(r"#\s*MRET:\s*platforms:\s*(.+)$", content, re.MULTILINE | re.IGNORECASE)
         if match:
             platforms_str = match.group(1).strip()
             # Parse comma-separated platforms
             platforms = [p.strip() for p in platforms_str.split(",")]
+            if any(p.lower() == "all" for p in platforms):
+                return ["Android", "iOS", "Misc"]
             # Validate platforms
             valid = [p for p in platforms if p in ["Android", "iOS", "Misc"]]
             return valid if valid else [default_platform]
-        
+
         return [default_platform]
     except Exception:
         return [default_platform]
+
+
+def _script_declares_platform(script_path: Path, target_platform: str) -> bool:
+    """True only when the script's own '# MRET: platforms:' marker lists
+    target_platform (or 'All'). Unlike get_script_platforms, this never
+    falls back to a default - a script with no marker declares nothing."""
+    try:
+        content = script_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return False
+    match = re.search(r"#\s*MRET:\s*platforms:\s*(.+)$", content, re.MULTILINE | re.IGNORECASE)
+    if not match:
+        return False
+    declared = [p.strip().lower() for p in match.group(1).split(",")]
+    return "all" in declared or target_platform.lower() in declared
 
 
 def check_script_requires_args(script_path: Path, visited: Optional[set] = None) -> bool:
@@ -273,30 +305,48 @@ def discover_scripts(platform: str = "All", deduplicate: bool = True) -> List[Sc
         platforms_to_scan = [platform]
     
     def scan_platform(plat: str) -> List[ScriptInfo]:
-        base_dir = SCRIPT_DIR / plat
         results = []
-        if not base_dir.is_dir():
-            return results
-        
-        for root, _, files in os.walk(base_dir):
-            for file in files:
-                if file.endswith(".py"):
+        seen_paths = set()
+
+        def collect(walk_dir: Path, require_marker: bool = False) -> None:
+            if not walk_dir.is_dir():
+                return
+            for root, _, files in os.walk(walk_dir):
+                for file in files:
+                    if not file.endswith(".py"):
+                        continue
                     file_path = Path(root) / file
-                    if _is_main_script(file_path, base_dir):
-                        name = prettify_script_name(file)
-                        desc = get_description_from_readme(file_path.parent)
-                        requires_args = check_script_requires_args(file_path)
-                        args_info = get_script_args_info(file_path) if requires_args else ""
-                        supported_platforms = get_script_platforms(file_path, plat)
-                        results.append(ScriptInfo(
-                            path=file_path,
-                            name=name,
-                            description=desc,
-                            platform=plat,
-                            requires_args=requires_args,
-                            args_info=args_info,
-                            supported_platforms=supported_platforms
-                        ))
+                    if file_path in seen_paths:
+                        continue
+                    if not _is_main_script(file_path, walk_dir):
+                        continue
+                    if require_marker and not _script_declares_platform(file_path, plat):
+                        continue
+                    seen_paths.add(file_path)
+                    name = prettify_script_name(file)
+                    desc = get_description_from_readme(file_path.parent)
+                    requires_args = check_script_requires_args(file_path)
+                    args_info = get_script_args_info(file_path) if requires_args else ""
+                    supported_platforms = get_script_platforms(file_path, plat)
+                    results.append(ScriptInfo(
+                        path=file_path,
+                        name=name,
+                        description=desc,
+                        platform=plat,
+                        requires_args=requires_args,
+                        args_info=args_info,
+                        supported_platforms=supported_platforms
+                    ))
+
+        collect(SCRIPT_DIR / plat)
+
+        # Cross-platform scripts living under Misc (the canonical shared
+        # location - see dedup logic below) that explicitly declare
+        # support for this platform also show up in that platform's tab,
+        # without needing a physical duplicate copy of the script.
+        if plat in ("Android", "iOS"):
+            collect(SCRIPT_DIR / "Misc", require_marker=True)
+
         return results
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
@@ -371,6 +421,36 @@ def organize_scripts():
             dest_folder.mkdir(parents=True, exist_ok=True)
             if file_path.resolve() != dest_path.resolve():
                 shutil.move(str(file_path), str(dest_path))
+
+
+# External CLI tools the scripts shell out to, and which tool(s) need them.
+# Keep this list in sync with the `subprocess`/`shutil.which` calls in
+# scripts/**/*.py - it's the one place that documents what a full MRET
+# setup actually requires outside of pip.
+REQUIRED_BINARIES: Dict[str, str] = {
+    "adb": "Apk Puller, Apk Builder + Installer, Frida Ex, Screen Mirror",
+    "jadx": "APK Extraction, Geiger",
+    "apktool": "APK Extraction, Apk Builder + Installer, Geiger",
+    "apksigner": "Apk Builder + Installer",
+    "java": "APK Extraction, Semgrep Scan",
+    "frida": "Frida Ex",
+    "semgrep": "Semgrep Scan",
+    "git": "Hermes Dec, Semgrep Scan, Geiger",
+    "scrcpy": "Screen Mirror",
+    "nuclei": "Geiger",
+    "hermes-dec": "Hermes Dec",
+}
+
+
+def check_system_binaries() -> Tuple[List[str], List[str]]:
+    """Probe PATH for every external CLI tool the scripts rely on.
+
+    Returns (found, missing) - each a sorted list of binary names.
+    """
+    found, missing = [], []
+    for binary in REQUIRED_BINARIES:
+        (found if shutil.which(binary) else missing).append(binary)
+    return sorted(found), sorted(missing)
 
 
 # ============================================================================
@@ -745,6 +825,7 @@ class MRETApp(App):
         Binding("enter", "run_script", "Run"),
         Binding("r", "refresh", "Refresh"),
         Binding("i", "import_file", "Import"),
+        Binding("d", "doctor", "Doctor"),
         Binding("1", "select_platform('All')", "All", show=False),
         Binding("2", "select_platform('Android')", "Android", show=False),
         Binding("3", "select_platform('iOS')", "iOS", show=False),
@@ -816,7 +897,17 @@ class MRETApp(App):
 
         # Load scripts
         self.load_scripts()
-    
+
+        # Flag missing external tools once, quietly, on startup
+        _, missing = check_system_binaries()
+        if missing:
+            self.notify(
+                f"{len(missing)} external tool(s) not on PATH: {', '.join(missing)}. Press 'd' for details.",
+                title="Doctor",
+                severity="warning",
+                timeout=8,
+            )
+
     def load_scripts(self) -> None:
         """Load scripts for current platform."""
         self.scripts = discover_scripts(self.current_platform)
@@ -947,7 +1038,25 @@ class MRETApp(App):
         """Refresh the script list."""
         self.load_scripts()
         self.notify("Scripts refreshed!", title="Refresh")
-    
+
+    def action_doctor(self) -> None:
+        """Check PATH for the external CLI tools scripts shell out to."""
+        found, missing = check_system_binaries()
+        if not missing:
+            self.notify(
+                f"All {len(found)} external tools found on PATH: {', '.join(found)}",
+                title="Doctor",
+                severity="information",
+            )
+            return
+        details = "; ".join(f"{b} (needed by {REQUIRED_BINARIES[b]})" for b in missing)
+        self.notify(
+            f"Missing from PATH: {details}",
+            title="Doctor - missing tools",
+            severity="warning",
+            timeout=10,
+        )
+
     def action_select_platform(self, platform: str) -> None:
         """Select platform via keyboard shortcut."""
         if platform in PLATFORMS:
@@ -1104,14 +1213,6 @@ def run_script(script: ScriptInfo, args: List[str]) -> int:
     except Exception as e:
         print(f"\n❌ Error: {e}")
         return 1
-
-
-def reset_terminal():
-    """Reset terminal to sane state."""
-    try:
-        os.system('stty sane 2>/dev/null')
-    except Exception:
-        pass
 
 
 def main():

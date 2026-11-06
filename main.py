@@ -12,13 +12,7 @@ import importlib.util
 from pathlib import Path
 from dataclasses import dataclass
 
-# Unix-only imports (for terminal control)
-try:
-    import tty
-    import termios
-    HAS_TERMIOS = True
-except ImportError:
-    HAS_TERMIOS = False
+from loot_shared import reset_terminal
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -54,19 +48,6 @@ class ToolkitInfo:
     path: Path
     category: str
     description: str = ""
-
-
-def reset_terminal():
-    """Reset terminal to sane state."""
-    try:
-        if HAS_TERMIOS:
-            os.system('stty sane 2>/dev/null')
-            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
-        else:
-            # Windows: Clear terminal buffer if possible
-            os.system('cls 2>nul')
-    except Exception:
-        pass
 
 
 def check_for_updates(repo_root: Path) -> tuple[bool, str]:
