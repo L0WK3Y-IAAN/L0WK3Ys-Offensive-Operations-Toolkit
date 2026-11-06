@@ -5,6 +5,7 @@
 !.gitignore
 !main.py
 !setup.py
+!requirements.txt
 
 # Include scripts directory and all its contents
 !scripts/

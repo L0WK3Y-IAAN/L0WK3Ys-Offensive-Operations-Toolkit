@@ -8,25 +8,30 @@ Install with all modules: pip install -e .[all]
 from setuptools import setup, find_packages
 from pathlib import Path
 
+HERE = Path(__file__).parent.resolve()
+
+
+def _read_requirements(req_file: Path) -> list[str]:
+    """Parse a requirements.txt into setuptools-friendly specifiers,
+    skipping comments/blank lines."""
+    if not req_file.exists():
+        return []
+    reqs = []
+    for raw_line in req_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line and not line.startswith("#"):
+            reqs.append(line)
+    return reqs
+
+
 # Read the root requirements
-root_requirements = [
+root_requirements = _read_requirements(HERE / "requirements.txt") or [
     "textual>=0.47.0",  # TUI framework for the launcher
 ]
 
-# Mobile-RE-Toolkit dependencies
-mret_requirements = [
-    "rich>=13.0.0",
-    "prompt-toolkit>=3.0.0",
-    "requests>=2.31.0",
-    "frida>=16.0.0",
-    "frida-tools>=12.0.0",
-    "typer>=0.9.0",
-    "beautifulsoup4>=4.12.0",
-    "selenium>=4.0.0",
-    "colorama>=0.4.6",
-    "Pygments>=2.15.0",
-    "GitPython>=3.1.0",
-]
+# Mobile-RE-Toolkit dependencies - sourced from Mobile-RE-Toolkit/requirements.txt
+# so this file and the launcher's own dependency check never drift apart.
+mret_requirements = _read_requirements(HERE / "Mobile-RE-Toolkit" / "requirements.txt")
 
 # All dependencies combined
 all_requirements = list(set(root_requirements + mret_requirements))

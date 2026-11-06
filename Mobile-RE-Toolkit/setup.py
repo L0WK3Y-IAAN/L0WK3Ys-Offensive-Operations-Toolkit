@@ -8,6 +8,23 @@ try:
 except FileNotFoundError:
     long_description = "Mobile Reverse Engineering Toolkit for Android Security Testing"
 
+
+def _read_requirements(req_file: pathlib.Path) -> list[str]:
+    """Single source of truth: parse requirements.txt (shared with the
+    LOOT launcher's own dependency check) instead of hand-duplicating
+    the list here, so the two never drift apart."""
+    if not req_file.exists():
+        return []
+    reqs = []
+    for raw_line in req_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line and not line.startswith("#"):
+            reqs.append(line)
+    return reqs
+
+
+core_requirements = _read_requirements(this_directory / "requirements.txt")
+
 setup(
     name="mobile-re-toolkit",
     version="1.0.0",
@@ -30,21 +47,7 @@ setup(
         "Programming Language :: Python :: 3.12",
     ],
     python_requires=">=3.8",
-    install_requires=[
-        # Core dependencies from your requirements
-        "beautifulsoup4>=4.13.0",
-        "colorama>=0.4.6",
-        "requests>=2.32.0",
-        "rich>=14.0.0",
-        "selenium>=4.34.0",
-        "setuptools>=80.0.0",
-        
-        # Supporting libraries
-        "trio>=0.30.0",
-        "websocket-client>=1.8.0",
-        "prompt_toolkit>=3.0.50",
-        "semgrep>=1.151.0",
-    ],
+    install_requires=core_requirements,
     extras_require={
         "dev": [
             "pytest>=7.0.0",
@@ -53,13 +56,9 @@ setup(
             "flake8>=6.0.0",
             "mypy>=1.0.0",
         ],
-        "interactive": [
-            "pygments>=2.19.0",
-            "trio-websocket>=0.12.0",
-        ],
-        "full": [
-            "sortedcontainers>=2.4.0",
-            "typing_extensions>=4.14.0",
+        "scan": [
+            # Semgrep Scan script shells out to the `semgrep` CLI
+            "semgrep>=1.151.0",
         ],
     },
     entry_points={

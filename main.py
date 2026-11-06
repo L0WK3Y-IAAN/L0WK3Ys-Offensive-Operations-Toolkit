@@ -5,8 +5,10 @@ A TUI-based launcher for all toolkit modules.
 """
 
 import os
+import re
 import sys
 import subprocess
+import importlib.util
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -207,37 +209,86 @@ def get_toolkit_description(main_py_path: Path) -> str:
 
 
 def find_requirements_file(module_path: Path) -> Path | None:
-    """Find the requirements.txt file for a module, searching up the tree."""
-    current = module_path.parent
+    """Find the requirements.txt file for a module, searching up the tree
+    from the module's directory to (and including) the repo root."""
+    current = module_path.parent.resolve()
     repo_root = Path(__file__).parent.resolve()
-    
-    while current >= repo_root:
+
+    while True:
         req_file = current / "requirements.txt"
         if req_file.exists():
             return req_file
+        if current == repo_root or repo_root not in current.parents:
+            break
         current = current.parent
-    
+
     return None
+
+
+# PyPI distribution name -> importable module name, for the common cases
+# where they differ. Anything not listed is assumed to import as itself
+# (lowercased, hyphens -> underscores).
+_PACKAGE_TO_IMPORT_NAME = {
+    "beautifulsoup4": "bs4",
+    "gitpython": "git",
+    "pygments": "pygments",
+    "pyyaml": "yaml",
+    "pillow": "PIL",
+    "prompt-toolkit": "prompt_toolkit",
+    "prompt_toolkit": "prompt_toolkit",
+    "frida-tools": None,  # CLI-only package, no importable module to probe
+}
+
+
+def _parse_requirement_names(req_file: Path) -> list[str]:
+    """Pull bare package names out of a requirements.txt (ignores comments,
+    blank lines, and version/extras specifiers)."""
+    names = []
+    try:
+        for raw_line in req_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.startswith("-"):
+                continue
+            # Strip extras ("pkg[extra]"), then any version/marker specifier
+            name = re.split(r"[<>=!~;\[\s]", line, maxsplit=1)[0].strip()
+            if name:
+                names.append(name)
+    except Exception:
+        pass
+    return names
+
+
+def _missing_dependencies(req_file: Path) -> list[str]:
+    """Return the subset of requirements that aren't importable right now."""
+    missing = []
+    for pkg_name in _parse_requirement_names(req_file):
+        key = pkg_name.lower()
+        import_name = _PACKAGE_TO_IMPORT_NAME.get(key, key.replace("-", "_"))
+        if import_name is None:
+            continue  # nothing importable to check (e.g. a CLI-only package)
+        try:
+            found = importlib.util.find_spec(import_name) is not None
+        except (ImportError, ValueError, ModuleNotFoundError):
+            found = False
+        if not found:
+            missing.append(pkg_name)
+    return missing
 
 
 def check_and_install_deps(module_path: Path) -> bool:
     """Check if dependencies are installed, offer to install if not."""
     req_file = find_requirements_file(module_path)
-    
+
     if not req_file:
         return True
-    
+
     print(f"📋 Found requirements: {req_file}")
     print("🔍 Checking dependencies...")
-    
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-r", str(req_file), "--dry-run", "-q"],
-        capture_output=True,
-        text=True
-    )
-    
-    if "Would install" in result.stdout or result.returncode != 0:
-        print("\n⚠️  Some dependencies are missing or need updating.")
+
+    missing = _missing_dependencies(req_file)
+
+    if missing:
+        print(f"\n⚠️  Missing dependencies: {', '.join(missing)}")
         print(f"   Requirements file: {req_file}\n")
         
         try:
