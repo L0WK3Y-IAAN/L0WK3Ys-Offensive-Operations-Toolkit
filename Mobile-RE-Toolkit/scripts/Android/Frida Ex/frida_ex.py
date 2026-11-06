@@ -472,6 +472,20 @@ def select_device(devices):
         
         console.print("[bold red]Invalid selection. Try again.[/]")
 
+def detect_device_os(device):
+    """Identify the connected device's OS via Frida's own system-parameters
+    query (works over USB regardless of whether adb can see the device,
+    e.g. iOS). Returns a lowercase os id ('android', 'ios', ...) or
+    'unknown' if it can't be determined."""
+    try:
+        params = device.query_system_parameters()
+        os_id = (params.get("os") or {}).get("id", "")
+        if os_id:
+            return os_id.lower()
+    except Exception:
+        pass
+    return "unknown"
+
 def detect_device_arch(device_id):
     res = adb(device_id, ["shell", "getprop", "ro.product.cpu.abi"], timeout=5)
     abi = res.stdout.strip().lower()
@@ -811,6 +825,13 @@ def main():
         devices = fut_devs.result()
     device = select_device(devices)
     device_id = device.id
+
+    os_id = detect_device_os(device)
+    if os_id not in ("unknown", "android"):
+        console.print(f"[red]❌ Selected device is {os_id.capitalize()}, not Android — this script only handles Android (adb/frida-server). Use the iOS Frida workflow instead.[/]")
+        sys.exit(1)
+    if os_id == "unknown":
+        console.print("[yellow]⚠ Could not determine device OS from Frida; assuming Android and proceeding.[/]")
 
     # Start root checks and ABI detect in parallel
     with ThreadPoolExecutor(max_workers=3) as ex:
