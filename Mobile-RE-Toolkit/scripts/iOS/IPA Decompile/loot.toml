@@ -1,0 +1,5 @@
+name = "IPA Decompile"
+description = "Lists IPAs found in the project's src tree, detects whether the selected app's main binary is Swift, Objective-C, or a mix of both, and decompiles it with ipsw (class-dump for Objective-C headers, swift-dump for Swift type/method declarations), falling back to class-dump/nm if ipsw isn't installed, into a per-app output folder."
+platforms = ["iOS"]
+requires_args = false
+binaries = ["otool", "nm", "xcrun", "unzip", "ipsw"]
