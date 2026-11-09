@@ -114,6 +114,20 @@ def pull_updates(repo_root: Path) -> tuple[bool, str]:
             timeout=5,
         )
         branch = (r_branch.stdout or "").strip() or "main"
+
+        r_dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if (r_dirty.stdout or "").strip():
+            return False, (
+                "You have local changes that would conflict with the update. "
+                "Commit or stash them, then press U again."
+            )
+
         r = subprocess.run(
             ["git", "pull", "origin", branch, "--no-edit"],
             cwd=repo_root,

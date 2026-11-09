@@ -1,11 +1,13 @@
 # FridaEX - Frida Automation Tool 🚀  
 
 
-**FridaEX is an automation tool designed to simplify Frida script injection for Android applications. It automatically detects connected devices, manages Frida server installation and execution, lists installed apps, and allows seamless Frida script injection. The tool also provides an interactive Frida shell after injection for real-time debugging and analysis.**
+**FridaEX is an automation tool designed to simplify Frida script injection for Android and iOS applications. It automatically detects connected devices, manages Frida server installation and execution on Android, lists installed apps, and allows seamless Frida script injection. The tool also provides an interactive Frida shell after injection for real-time debugging and analysis.**
 
 ## **Features**
 ✅ **Automated Device & Process Detection** – Lists connected devices and running processes.  
-✅ **Frida Server Management** – Checks if Frida server is running, installs it if missing, and starts it automatically.  
+✅ **Frida Server Management** – Checks if Frida server is running, installs it if missing, and starts it automatically (Android).  
+✅ **iOS Support** – Detects iOS devices (including vphone virtual iPhones), lists apps through Frida, and spawns them with the Frida shell — attaching instead when the app is already running or spawn is refused (requires frida-server running in a jailbroken device/VM).  
+✅ **Stable Gadget Mode (iOS)** – Frida's server-injected agent crashes apps on iOS 17+ (dyld image-load abort). Stable mode patches the app to preload `frida-gadget`, re-installs it through vphone (auto re-sign), and attaches over `iproxy` — crash-free instrumentation with any script.  
 ✅ **Package Enumeration** – Lists all installed applications on the device and allows selection.  
 ✅ **Frida Script Execution** – Lets you choose a Frida script from a predefined directory and inject it into an app.  
 ✅ **Interactive Frida Shell** – Attaches or spawns the app with Frida and provides an interactive debugging shell.  
