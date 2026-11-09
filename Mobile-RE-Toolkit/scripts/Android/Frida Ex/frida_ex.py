@@ -5,19 +5,22 @@
 import os
 import sys
 import re
+import json
 import shlex
+import struct
 import time
 import lzma
+import plistlib
 import shutil
 import signal
 import subprocess
+import zipfile as zipfile_mod
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 import tempfile
 import threading
 
 import requests
-import frida
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
@@ -40,6 +43,17 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_LIST_ONLY_USER_APPS = True
 DEFAULT_BIND = "0.0.0.0:27042"
 
+# Stable gadget mode (iOS): frida's server-injected agent crashes apps on
+# iOS 27's dyld4 as soon as they lazily load an image while attached
+# (SIGABRT in the dyld add-image notification path). Loading frida-gadget
+# into the process instead suppresses the crash completely, so the stable
+# workflow patches the app to LC_LOAD_DYLIB the gadget, lets vphone's
+# apps.install re-sign it, and attaches to the gadget over iproxy.
+GADGET_GUEST_PATH = "/var/root/frida-gadget.dylib"
+GADGET_CONFIG_GUEST_PATH = "/var/root/frida-gadget.config"
+GADGET_PORT = 27045
+GADGET_URL = "https://github.com/frida/frida/releases/download/17.26.1/frida-gadget-17.26.1-ios-universal.dylib.xz"
+
 MAX_WORKERS = max(4, (os.cpu_count() or 4))
 NET_TIMEOUT = 45
 ADB_TIMEOUT = 10
@@ -59,6 +73,18 @@ def project_scripts_folder():
 
 def run(cmd, timeout=10, check=False, text=True):
     return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=check, text=text)
+
+
+def frida_safe_env():
+    """Environment for frida subprocesses/exec. DYLD_LIBRARY_PATH (and
+    friends) can pull Homebrew's libpng/libjpeg in front of Apple's codecs;
+    frida's device-icon extraction then decodes a PNG through the broken
+    combination and dies with SIGBUS inside ImageIO (known upstream bug:
+    frida-go#63). The helpers only need system frameworks, so strip them."""
+    env = dict(os.environ)
+    for var in ("DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"):
+        env.pop(var, None)
+    return env
 
 def adb(device_id, args, timeout=ADB_TIMEOUT, check=False):
     return run(["adb", "-s", device_id] + args, timeout=timeout, check=check)
@@ -94,11 +120,118 @@ def is_device_rooted(device_id):
     except Exception:
         return False
 
+class _DeviceInfo:
+    """Lightweight stand-in for a frida.core.Device, carrying only what the
+    rest of this script needs (id/type/name, plus the OS id we pre-fetched
+    for it - see get_frida_devices)."""
+    __slots__ = ("id", "type", "name", "os_id")
+
+    def __init__(self, id_, type_, name_, os_id_):
+        self.id = id_
+        self.type = type_
+        self.name = name_
+        self.os_id = os_id_
+
+
+_ENUMERATE_DEVICES_HELPER = (
+    "import frida, json\n"
+    "out = []\n"
+    "for d in frida.enumerate_devices():\n"
+    "    try:\n"
+    "        params = d.query_system_parameters()\n"
+    "        os_id = (params.get('os') or {}).get('id') or None\n"
+    "    except Exception:\n"
+    "        os_id = None\n"
+    "    out.append({'id': d.id, 'type': d.type, 'name': d.name, 'os_id': os_id})\n"
+    "print(json.dumps(out))\n"
+)
+
+
 def get_frida_devices():
+    """Enumerate Frida devices out-of-process.
+
+    frida.enumerate_devices() has been observed to crash the interpreter
+    outright (SIGBUS, no traceback) on some host/version combinations -
+    notably when the Python `frida` module's version doesn't match the
+    frida-server/CLI version on the target device. Running it in a
+    subprocess means a crash there is reported as a failed subprocess
+    instead of taking the whole tool down with it.
+    """
     try:
-        return frida.enumerate_devices()
+        res = subprocess.run(
+            [sys.executable, "-c", _ENUMERATE_DEVICES_HELPER],
+            capture_output=True, text=True, timeout=30, env=frida_safe_env(),
+        )
+    except subprocess.TimeoutExpired:
+        console.print("[red]Error getting devices: enumeration timed out.[/]")
+        return []
     except Exception as e:
         console.print(f"[red]Error getting devices: {e}[/]")
+        return []
+
+    if res.returncode != 0:
+        if res.returncode < 0:
+            console.print(f"[red]❌ Device enumeration crashed (signal {-res.returncode}) instead of raising an error.[/]")
+        else:
+            err = (res.stderr or "").strip().splitlines()
+            console.print(f"[red]❌ Error getting devices: {err[-1] if err else 'unknown error'}[/]")
+        console.print(
+            "[yellow]This is commonly caused by a version mismatch between the Python "
+            "`frida` module this tool uses and the frida-server/frida CLI on the "
+            "target device (run `frida --version` and align the versions), or by "
+            "DYLD_LIBRARY_PATH pulling Homebrew image dylibs into frida's icon "
+            "decoder (frida-go#63) - this tool already strips DYLD_* for its frida "
+            "subprocesses, so a crash here means the outer environment is doing it.[/]"
+        )
+        return []
+
+    try:
+        data = json.loads(res.stdout.strip() or "[]")
+    except Exception as e:
+        console.print(f"[red]Error parsing device list: {e}[/]")
+        return []
+
+    return [_DeviceInfo(d["id"], d["type"], d.get("name") or d["id"], d.get("os_id")) for d in data]
+
+
+_ENUMERATE_APPS_HELPER = (
+    "import frida, json, sys\n"
+    "dev = frida.get_device(sys.argv[1], timeout=15)\n"
+    "apps = dev.enumerate_applications()\n"
+    "print(json.dumps([{'identifier': a.identifier, 'name': a.name, 'pid': a.pid} for a in apps]))\n"
+)
+
+
+def get_frida_applications(device_id):
+    """List installed applications through Frida itself. iOS has no adb,
+    so this is the only way to enumerate apps there. Runs out-of-process
+    for the same crash-isolation reason as get_frida_devices."""
+    try:
+        res = subprocess.run(
+            [sys.executable, "-c", _ENUMERATE_APPS_HELPER, device_id],
+            capture_output=True, text=True, timeout=45, env=frida_safe_env(),
+        )
+    except subprocess.TimeoutExpired:
+        console.print("[red]Error listing applications: timed out.[/]")
+        return []
+    except Exception as e:
+        console.print(f"[red]Error listing applications: {e}[/]")
+        return []
+
+    if res.returncode != 0:
+        err = (res.stderr or "").strip().splitlines()
+        console.print(f"[red]❌ Error listing applications: {err[-1] if err else 'unknown error'}[/]")
+        console.print(
+            "[yellow]Frida couldn't talk to the device. On iOS this usually means "
+            "frida-server isn't running inside the VM/device (it must be jailbroken "
+            "with frida-server started as root).[/]"
+        )
+        return []
+
+    try:
+        return json.loads(res.stdout.strip() or "[]")
+    except Exception as e:
+        console.print(f"[red]Error parsing application list: {e}[/]")
         return []
 
 # ------------------------------------------------------------------------------
@@ -473,18 +606,12 @@ def select_device(devices):
         console.print("[bold red]Invalid selection. Try again.[/]")
 
 def detect_device_os(device):
-    """Identify the connected device's OS via Frida's own system-parameters
-    query (works over USB regardless of whether adb can see the device,
-    e.g. iOS). Returns a lowercase os id ('android', 'ios', ...) or
-    'unknown' if it can't be determined."""
-    try:
-        params = device.query_system_parameters()
-        os_id = (params.get("os") or {}).get("id", "")
-        if os_id:
-            return os_id.lower()
-    except Exception:
-        pass
-    return "unknown"
+    """Identify the connected device's OS from the os_id Frida reported
+    for it during enumeration (works over USB regardless of whether adb
+    can see the device, e.g. iOS). Returns a lowercase os id
+    ('android', 'ios', ...) or 'unknown' if it wasn't available."""
+    os_id = getattr(device, "os_id", None)
+    return os_id.lower() if os_id else "unknown"
 
 def detect_device_arch(device_id):
     res = adb(device_id, ["shell", "getprop", "ro.product.cpu.abi"], timeout=5)
@@ -789,19 +916,372 @@ def select_frida_script(default_folder=None):
         
         console.print("[bold red]Invalid selection. Try again.[/]")
 
-def launch_frida_shell(package_name, script_path=None):
+def launch_frida_shell(device_id, package_name, script_path=None):
     console.print("[cyan]🚀 Launching Frida shell...[/]")
-    cmd = ["frida", "-U", "-f", package_name]
+    cmd = ["frida", "-D", device_id, "-f", package_name]
     if script_path:
         cmd.extend(["-l", script_path])
+    env = frida_safe_env()
     try:
-        os.execvp(cmd[0], cmd)
+        os.execvpe(cmd[0], cmd, env)
     except FileNotFoundError:
         console.print("[red]❌ 'frida' not found in PATH. Ensure frida-tools is installed and on PATH.[/]")
         sys.exit(1)
     except Exception as e:
         console.print(f"[yellow]⚠ exec failed ({e}); falling back to subprocess.[/]")
-        subprocess.call(cmd)
+        subprocess.call(cmd, env=env)
+
+
+def wait_for_app_pid(device_id, bundle_id, timeout=90):
+    console.print(f"[cyan]⏳ Waiting for {bundle_id} to start - open (tap) it on the device/VM now (Ctrl+C to abort)...[/]")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for a in get_frida_applications(device_id):
+            if a["identifier"] == bundle_id and a.get("pid"):
+                return a["pid"]
+        time.sleep(2)
+    return None
+
+
+def launch_ios_frida_shell(device_id, bundle_id, pid, script_path=None):
+    env = frida_safe_env()
+    args = ["frida", "-D", device_id]
+    if pid:
+        console.print(f"[cyan]🚀 App already running (pid {pid}) - attaching...[/]")
+        args += ["-p", str(pid)]
+    else:
+        console.print("[cyan]🚀 Launching Frida shell (spawn)...[/]")
+        args += ["-f", bundle_id]
+    if script_path:
+        args += ["-l", script_path]
+
+    res = subprocess.run(args, env=env)
+    if res.returncode == 0 or pid:
+        return
+
+    # Spawn refused (e.g. expired provisioning profile or debug-stub builds
+    # like Injecta apps - frida reports NotSupportedError/ECANCELED). The app
+    # usually still launches fine by hand, so ask the user to open it and
+    # attach instead - same flow the README documents for running apps.
+    console.print(f"[yellow]⚠ Spawn of {bundle_id} was refused (exit {res.returncode}). Falling back to attach.[/]")
+    pid = wait_for_app_pid(device_id, bundle_id)
+    if not pid:
+        console.print("[red]❌ App never appeared - can't attach.[/]")
+        sys.exit(1)
+    args = ["frida", "-D", device_id, "-p", str(pid)]
+    if script_path:
+        args += ["-l", script_path]
+    subprocess.run(args, env=env)
+
+
+# --- Stable gadget mode (iOS) ----------------------------------------------
+
+def get_toolkit_ipa_dirs():
+    script_dir = Path(__file__).resolve().parent
+    root = script_dir.parents[2]  # Mobile-RE-Toolkit
+    return [root, root / "src", root / "src" / "ipa", root / "src" / "output" / "pulled_ipas"]
+
+
+def find_ipa_for_bundle(bundle_id):
+    """Find an IPA in the toolkit's IPA folders whose CFBundleIdentifier
+    matches, so we can patch and re-install it through vphone."""
+    seen = set()
+    for d in get_toolkit_ipa_dirs():
+        if not d.is_dir():
+            continue
+        for ipa in d.rglob("*.ipa"):
+            key = os.path.realpath(ipa)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                with zipfile_mod.ZipFile(ipa) as zf:
+                    for name in zf.namelist():
+                        if name.endswith(".app/Info.plist"):
+                            info = plistlib.loads(zf.read(name))
+                            if info.get("CFBundleIdentifier") == bundle_id:
+                                return ipa
+                            break
+            except Exception:
+                continue
+    return None
+
+
+def macho_add_load_dylib(binary: Path, dylib_path: str) -> None:
+    """Add an LC_LOAD_DYLIB command to a thin arm64 Mach-O executable and
+    drop LC_CODE_SIGNATURE (the bundle is re-signed by vphone's
+    apps.install afterwards). Raises if the header has no room."""
+    data = bytearray(binary.read_bytes())
+    (magic,) = struct.unpack_from("<I", data, 0)
+    if magic != 0xfeedfacf:
+        raise RuntimeError(f"{binary.name}: not a thin arm64 Mach-O (magic {magic:#x}) - patch this one manually")
+    ncmds, sizeofcmds = struct.unpack_from("<II", data, 16)
+
+    first_data = len(data)
+    kept = bytearray()
+    kept_size = 0
+    kept_cmds = 0
+    p = 32
+    for _ in range(ncmds):
+        cmd, cmdsize = struct.unpack_from("<II", data, p)
+        if cmd == 0x19:  # LC_SEGMENT_64
+            fileoff, filesize = struct.unpack_from("<QQ", data, p + 40)
+            if 0 < fileoff < first_data and filesize > 0:
+                first_data = fileoff
+            nsects = struct.unpack_from("<I", data, p + 64)[0]
+            sp = p + 72
+            for _ in range(nsects):
+                size = struct.unpack_from("<Q", data, sp + 40)[0]
+                off = struct.unpack_from("<I", data, sp + 48)[0]
+                if 0 < off < first_data and size > 0:
+                    first_data = off
+                sp += 80
+        if cmd != 0x1d:  # drop LC_CODE_SIGNATURE
+            kept += data[p:p + cmdsize]
+            kept_size += cmdsize
+            kept_cmds += 1
+        p += cmdsize
+
+    path_bytes = dylib_path.encode() + b"\x00"
+    new_cmdsize = (24 + len(path_bytes) + 7) & ~7
+    new_cmd = struct.pack("<IIIIII", 0x0C, new_cmdsize, 24, 0, 0x10000, 0x10000)
+    new_cmd += path_bytes + b"\x00" * (new_cmdsize - 24 - len(path_bytes))
+
+    if 32 + kept_size + new_cmdsize > first_data:
+        raise RuntimeError(f"{binary.name}: no room in the Mach-O header for LC_LOAD_DYLIB")
+
+    data[16:24] = struct.pack("<II", kept_cmds + 1, kept_size + new_cmdsize)
+    data[32:32 + kept_size + new_cmdsize] = kept + new_cmd
+    binary.write_bytes(data)
+
+
+def repack_ipa(src_dir: Path, out_ipa: Path) -> None:
+    out_resolved = out_ipa.resolve()
+    with zipfile_mod.ZipFile(out_ipa, "w", zipfile_mod.ZIP_DEFLATED) as zf:
+        for path in sorted(src_dir.rglob("*")):
+            if path.is_file() and path.resolve() != out_resolved:
+                zf.write(path, path.relative_to(src_dir))
+
+
+# --- vphone CLI integration (stable mode's deploy channel) ------------------
+
+def vph(*args, timeout=120):
+    return subprocess.run(["vphone-launchpad-cli", *args], capture_output=True, text=True, timeout=timeout)
+
+
+def vph_machine_for(device_id):
+    """Match the frida device to a vphone machine by UDID; fall back to the
+    only machine."""
+    if not shutil.which("vphone-launchpad-cli"):
+        return None
+    try:
+        res = vph("vm", "list", timeout=30)
+        machines = json.loads(res.stdout)
+    except Exception:
+        return None
+    if not machines:
+        return None
+    for m in machines:
+        if m.get("udid") == device_id:
+            return m.get("name")
+    return machines[0].get("name") if len(machines) == 1 else None
+
+
+def vph_push(machine, local, remote, mode="644", retries=3):
+    payload = json.dumps({"t": "push", "local": str(local), "path": remote, "mode": mode, "screen": False})
+    for attempt in range(retries):
+        try:
+            res = vph("guest", "send", machine, payload)
+            if res.returncode == 0 and '"ok"' in res.stdout:
+                return True
+        except Exception:
+            pass
+        time.sleep(1.5)
+    return False
+
+
+def vph_rpc(machine, method, params, timeout=120):
+    res = vph("guest", "rpc", machine, method, json.dumps(params), timeout=timeout)
+    return res.returncode == 0
+
+
+def ensure_gadget_cached():
+    """Download + decompress frida-gadget for iOS into the cache; returns
+    the local path."""
+    bin_path = CACHE_DIR / "frida-gadget-ios.dylib"
+    if bin_path.exists():
+        return bin_path
+    xz_path = CACHE_DIR / "frida-gadget-ios.dylib.xz"
+    if not xz_path.exists():
+        console.print(f"[cyan]🔽 Downloading frida-gadget: {GADGET_URL}[/]")
+        _stream_download(GADGET_URL, xz_path)
+    console.print("[cyan]🔍 Extracting frida-gadget...[/]")
+    _xz_decompress_stream(xz_path, bin_path)
+    return bin_path
+
+
+def ensure_gadget_in_guest(machine):
+    gadget = ensure_gadget_cached()
+    config = json.dumps({
+        "interaction": {
+            "type": "listen",
+            "address": "127.0.0.1",
+            "port": GADGET_PORT,
+            "on_load": "resume",
+        }
+    })
+    console.print("[cyan]📂 Deploying frida-gadget into the VM...[/]")
+    if not vph_push(machine, gadget, GADGET_GUEST_PATH, mode="755"):
+        console.print("[red]❌ Couldn't push frida-gadget into the guest.[/]")
+        return False
+    tmp_cfg = CACHE_DIR / "frida-gadget.config"
+    tmp_cfg.write_text(config)
+    if not vph_push(machine, tmp_cfg, GADGET_CONFIG_GUEST_PATH, mode="644"):
+        console.print("[red]❌ Couldn't push the gadget config into the guest.[/]")
+        return False
+    return True
+
+
+def start_gadget_tunnel():
+    if not shutil.which("iproxy"):
+        console.print("[red]❌ iproxy not found (brew install libimobiledevice).[/]")
+        return False
+    proc = subprocess.Popen(["iproxy", str(GADGET_PORT), str(GADGET_PORT)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    import atexit
+    atexit.register(proc.kill)
+    time.sleep(1)
+    return True
+
+
+def gadget_frida_pid():
+    helper = (
+        "import frida, json, sys\n"
+        "d = frida.get_device_manager().add_remote_device(sys.argv[1])\n"
+        "print(json.dumps([p.pid for p in d.enumerate_processes()]))\n"
+    )
+    try:
+        res = subprocess.run([sys.executable, "-c", helper, f"127.0.0.1:{GADGET_PORT}"],
+                             capture_output=True, text=True, timeout=30, env=frida_safe_env())
+        pids = json.loads(res.stdout.strip() or "[]")
+        return pids[0] if pids else None
+    except Exception:
+        return None
+
+
+def run_gadget_flow(device_id, bundle_id, script_path=None):
+    """Stable iOS instrumentation: patch the app to preload frida-gadget,
+    (re)install it through vphone (which re-signs), and attach to the
+    gadget over iproxy. Returns False when the prerequisites are missing."""
+    machine = vph_machine_for(device_id)
+    if not machine:
+        console.print("[yellow]⚠ No vphone machine matched this device - gadget mode unavailable.[/]")
+        return False
+
+    ipa = find_ipa_for_bundle(bundle_id)
+    if not ipa:
+        console.print(f"[yellow]⚠ No IPA with CFBundleIdentifier {bundle_id} found in the toolkit's IPA folders - gadget mode needs it to patch the app.[/]")
+        return False
+
+    console.print(f"[cyan]🔧 Instrumenting {bundle_id} with frida-gadget (stable mode)...[/]")
+    with tempfile.TemporaryDirectory(prefix="fridaex_gadget_") as tmp:
+        tmp_path = Path(tmp)
+        with zipfile_mod.ZipFile(ipa) as zf:
+            zf.extractall(tmp_path)
+        app_dirs = [p for p in (tmp_path / "Payload").iterdir() if p.is_dir() and p.suffix == ".app"]
+        if not app_dirs:
+            console.print("[red]❌ No .app bundle inside the IPA.[/]")
+            return False
+        app_dir = app_dirs[0]
+        with open(app_dir / "Info.plist", "rb") as f:
+            info = plistlib.load(f)
+        exe = app_dir / info.get("CFBundleExecutable", app_dir.stem)
+        try:
+            macho_add_load_dylib(exe, GADGET_GUEST_PATH)
+        except RuntimeError as e:
+            console.print(f"[red]❌ {e}[/]")
+            return False
+        patched_ipa = CACHE_DIR / "fridaex-gadget.ipa"
+        repack_ipa(tmp_path, patched_ipa)
+        guest_ipa = "/var/root/fridaex-gadget.ipa"
+
+        if not vph_push(machine, patched_ipa, guest_ipa):
+            console.print("[red]❌ Couldn't push the patched IPA into the guest.[/]")
+            return False
+        vph_rpc(machine, "apps.terminate", {"bundle_id": bundle_id})
+        if not vph_rpc(machine, "apps.install", {"path": guest_ipa}):
+            console.print("[red]❌ apps.install failed in the guest.[/]")
+            return False
+
+    if not ensure_gadget_in_guest(machine):
+        return False
+    if not start_gadget_tunnel():
+        return False
+
+    console.print(f"[cyan]🚀 Launching {bundle_id} (gadget listens on 127.0.0.1:{GADGET_PORT})...[/]")
+    vph_rpc(machine, "apps.launch", {"bundle_id": bundle_id})
+
+    pid = None
+    for _ in range(10):
+        pid = gadget_frida_pid()
+        if pid:
+            break
+        time.sleep(1)
+    if not pid:
+        console.print("[red]❌ Gadget never came online - is the app running?[/]")
+        return False
+
+    console.print(f"[green]✅ Gadget online (pid {pid}) - attaching in stable mode.[/]")
+    env = frida_safe_env()
+    args = ["frida", "-H", f"127.0.0.1:{GADGET_PORT}", "-p", str(pid)]
+    if script_path:
+        args += ["-l", script_path]
+    subprocess.run(args, env=env)
+    return True
+
+
+def run_ios_flow(device_id):
+    """iOS devices (including vphone virtual iPhones) have no adb and can't
+    use the Android frida-server bootstrap - list apps through Frida itself
+    and run the frida CLI against the selected one (spawn, or attach when
+    the app is already running / spawn is refused)."""
+    console.print("[green]🍏 iOS device - listing apps through Frida (requires frida-server running inside the device/VM).[/]")
+
+    apps = get_frida_applications(device_id)
+    if not apps:
+        console.print("[red]❌ No applications visible via Frida - is frida-server running inside the iOS VM/device?[/]")
+        sys.exit(1)
+
+    only_user = Confirm.ask("[bold cyan]Hide system apps (com.apple.*)?[/]", default=DEFAULT_LIST_ONLY_USER_APPS)
+    if only_user:
+        apps = [a for a in apps if not a["identifier"].startswith("com.apple.")]
+    app_pids = {a["identifier"]: a.get("pid") or 0 for a in apps}
+    packages = sorted(app_pids)
+
+    chosen_package = select_package(packages)
+
+    default_scripts_dir = project_scripts_folder()
+    if default_scripts_dir:
+        console.print(f"[green]✅ Using existing Frida scripts folder: {default_scripts_dir}[/]")
+    else:
+        console.print("[yellow]ℹ Scripts folder not auto-detected; optional path prompt follows.[/]")
+
+    script_path = select_frida_script(default_scripts_dir)
+    if script_path:
+        try:
+            script_src = Path(script_path).read_text(errors="replace")
+        except Exception:
+            script_src = ""
+        if "Java.perform" in script_src or "Java.use" in script_src:
+            console.print("[yellow]⚠ This script uses the Java bridge (Android-only) - it will not do anything useful on iOS.[/]")
+
+    if Confirm.ask("[bold cyan]Use stable gadget mode?[/] (recommended - direct attach crashes apps on iOS 17+)",
+                   default=True):
+        if run_gadget_flow(device_id, chosen_package, script_path):
+            return
+        console.print("[yellow]⚠ Gadget mode unavailable - falling back to direct attach.[/]")
+
+    launch_ios_frida_shell(device_id, chosen_package, app_pids.get(chosen_package, 0), script_path)
 
 # ------------------------------------------------------------------------------
 # Main orchestration (with parallelism)
@@ -810,10 +1290,12 @@ def launch_frida_shell(package_name, script_path=None):
 def main():
     console.print("\n[bold magenta]🔎 FridaEX Automation Tool 🔍[/]\n")
 
-    # Prefetch local version and connected devices concurrently
-    with ThreadPoolExecutor(max_workers=3) as ex:
+    # Prefetch local version (subprocess, thread-safe) while enumerating
+    # devices. frida.enumerate_devices() drives a CF run loop for USB/IOKit
+    # on macOS and must stay on the main thread - calling it from a worker
+    # thread crashes the interpreter outright (SIGBUS).
+    with ThreadPoolExecutor(max_workers=2) as ex:
         fut_ver = ex.submit(get_local_frida_version)
-        fut_devs = ex.submit(get_frida_devices)
 
         try:
             local_version = fut_ver.result(timeout=6)
@@ -822,13 +1304,16 @@ def main():
             console.print(f"[red]❌ Unable to read local Frida version: {e}[/]")
             sys.exit(1)
 
-        devices = fut_devs.result()
+    devices = get_frida_devices()
     device = select_device(devices)
     device_id = device.id
 
     os_id = detect_device_os(device)
+    if os_id == "ios":
+        run_ios_flow(device_id)
+        return
     if os_id not in ("unknown", "android"):
-        console.print(f"[red]❌ Selected device is {os_id.capitalize()}, not Android — this script only handles Android (adb/frida-server). Use the iOS Frida workflow instead.[/]")
+        console.print(f"[red]❌ Selected device is {os_id.capitalize()}, not Android or iOS — not supported.[/]")
         sys.exit(1)
     if os_id == "unknown":
         console.print("[yellow]⚠ Could not determine device OS from Frida; assuming Android and proceeding.[/]")
@@ -907,7 +1392,7 @@ def main():
 
     script_path = select_frida_script(default_scripts_dir)
 
-    launch_frida_shell(chosen_package, script_path)
+    launch_frida_shell(device_id, chosen_package, script_path)
 
 if __name__ == "__main__":
     try:

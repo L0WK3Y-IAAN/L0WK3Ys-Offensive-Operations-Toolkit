@@ -53,11 +53,11 @@ Frida Scripts on codeshare.frida.re
 | 2     | Hooking System Calls    | JaneDoe | Hooking system calls using Frida.         |
 ---------------------------------------------------------
 
-Type your search (press Enter to skip). Auto-completion enabled!
+Type your search (press Enter to show all). Auto-completion enabled!
 Search Query: SSL
 
 [1] Bypass SSL Pinning - JohnDoe
-Enter the number of the script to download (or 'q' to quit): 1
+Enter the number of the script to download ('s' to search again, 'q' to quit): 1
 Downloading script: Bypass SSL Pinning
 Script saved to: scripts/bypass_ssl_pinning.js
 ```

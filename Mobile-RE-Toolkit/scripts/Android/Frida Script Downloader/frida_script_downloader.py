@@ -42,15 +42,20 @@ BROWSE_BASE = f"{BASE_URL}/browse?page="
 # Page fetching
 # -----------------------------------------------------------------------------
 
-def fetch_page(url):
-    """Fetch HTML from a URL, returning the text or None on failure."""
-    try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        return resp.text
-    except Exception as e:
-        console.print(f"[red]Error fetching page {url}: {e}[/]")
-        return None
+def fetch_page(url, retries=3):
+    """Fetch HTML from a URL, returning the text or None on failure.
+    Retries transient errors - a silently dropped page means missing
+    search results."""
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            return resp.text
+        except Exception as e:
+            if attempt == retries:
+                console.print(f"[red]Error fetching page {url}: {e}[/]")
+                return None
+            time.sleep(1)
 
 def parse_articles(html):
     """Parse <article> blocks from the raw HTML. Returns a list of dicts."""
@@ -153,7 +158,7 @@ def interactive_search(entries):
     search_completer = build_autocompleter(entries)
     session = PromptSession()
 
-    console.print("[bold cyan]Type your search (press Enter to skip). Auto-completion enabled![/]")
+    console.print("[bold cyan]Type your search (press Enter to show all). Auto-completion enabled![/]")
     query = session.prompt("Search Query: ", completer=search_completer).strip().lower()
     if not query:
         return entries
@@ -299,31 +304,39 @@ def main():
         console.print("[red]No script entries found![/]")
         return
 
-    filtered = interactive_search(all_entries)
-    if not filtered:
-        console.print("[red]No results match your query.[/]")
-        return
-
-    display_table(filtered)
-
     while True:
-        choice = Prompt.ask("[bold cyan]Enter the number of the script to download (or 'q' to quit)[/]").strip()
-        if choice.lower() == 'q':
-            console.print("[yellow]Exiting...[/]")
-            break
-
-        if not choice.isdigit():
-            console.print("[red]Invalid selection. Try again.[/]")
+        filtered = interactive_search(all_entries)
+        if not filtered:
+            console.print("[red]No results match your query.[/]")
+            again = Prompt.ask("[bold cyan](s)earch again or (q)uit[/]", choices=["s", "q"], default="s")
+            if again == "q":
+                console.print("[yellow]Exiting...[/]")
+                return
             continue
 
-        idx = int(choice)
-        if 1 <= idx <= len(filtered):
-            selected = filtered[idx - 1]
-            console.print(f"[cyan]Downloading script: {selected['title']}[/]")
-            download_script_code(selected["page_url"])
-            break
-        else:
-            console.print("[red]Invalid selection. Try again.[/]")
+        display_table(filtered)
+
+        while True:
+            choice = Prompt.ask(
+                "[bold cyan]Enter the number of the script to download ('s' to search again, 'q' to quit)[/]"
+            ).strip()
+            if choice.lower() == 'q':
+                console.print("[yellow]Exiting...[/]")
+                return
+            if choice.lower() == 's':
+                break
+
+            if not choice.isdigit():
+                console.print("[red]Invalid selection. Try again.[/]")
+                continue
+
+            idx = int(choice)
+            if 1 <= idx <= len(filtered):
+                selected = filtered[idx - 1]
+                console.print(f"[cyan]Downloading script: {selected['title']}[/]")
+                download_script_code(selected["page_url"])
+            else:
+                console.print("[red]Invalid selection. Try again.[/]")
 
 if __name__ == "__main__":
     try:
